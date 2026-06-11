@@ -48,15 +48,16 @@ def get_current_user(request: Request) -> dict | None:
 
 
 def _set_session_cookie(response, token: str):
-    """Always SameSite=None; Secure so the cookie works on both same-domain
-    (Replit unified) and cross-domain (Render split) HTTPS deployments."""
+    """SameSite=Lax works for top-level OAuth redirects and same-site requests
+    without requiring third-party cookie permissions (which browsers block)."""
     response.set_cookie(
         "session",
         token,
         httponly=True,
-        samesite="none",
-        secure=True,
+        samesite="lax",
+        secure=False,
         max_age=SESSION_EXPIRE_HOURS * 3600,
+        path="/",
     )
 
 
@@ -197,7 +198,7 @@ async def logout():
     cfg = _cfg()
     home = cfg["dashboard_url"] or "/"
     resp = RedirectResponse(home, status_code=302)
-    resp.delete_cookie("session", samesite="none", secure=True)
+    resp.delete_cookie("session", samesite="lax", secure=False, path="/")
     return resp
 
 

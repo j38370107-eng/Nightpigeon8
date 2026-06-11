@@ -18,14 +18,10 @@ DISCORD_API = "https://discord.com/api/v10"
 
 
 def _cfg(request: Request = None):
-    redirect_uri = os.environ.get("REDIRECT_URI", "")
-    if not redirect_uri and request is not None:
-        scheme = "https" if _is_https() else request.url.scheme
-        redirect_uri = f"{scheme}://{request.url.netloc}/api/auth/callback"
     return {
         "client_id":     os.environ.get("CLIENT_ID", ""),
         "client_secret": os.environ.get("CLIENT_SECRET", ""),
-        "redirect_uri":  redirect_uri,
+        "redirect_uri":  _build_redirect_uri(request) if request else os.environ.get("REDIRECT_URI", ""),
         "secret_key":    os.environ.get("API_SECRET_KEY", "changeme-secret-key-123"),
         "dashboard_url": os.environ.get("DASHBOARD_URL", "").rstrip("/"),
     }
@@ -51,23 +47,40 @@ def get_current_user(request: Request) -> dict | None:
     return decode_jwt(token)
 
 
-def _is_https() -> bool:
-    """Detect if we're running behind an HTTPS proxy (Render, Replit, etc.)."""
-    return os.environ.get("HTTPS_PROXY", "").lower() in ("1", "true", "yes") or \
-           os.environ.get("RENDER", "") != "" or \
-           os.environ.get("REPLIT_DOMAINS", "") != ""
+def _build_redirect_uri(request: Request) -> str:
+    """Build the OAuth redirect URI reliably, handling reverse proxies correctly.
+    Priority: REDIRECT_URI env var → Replit domain → X-Forwarded headers → Host header.
+    """
+    explicit = os.environ.get("REDIRECT_URI", "").strip()
+    if explicit:
+        return explicit
+
+    # Replit provides its domain as an env var
+    replit_domain = os.environ.get("REPLIT_DEV_DOMAIN", "").strip()
+    if replit_domain:
+        return f"https://{replit_domain}/api/auth/callback"
+
+    # For Render and other proxies: use forwarded headers, not the internal netloc
+    # X-Forwarded-Host is the public hostname; X-Forwarded-Proto is the scheme
+    fwd_host  = request.headers.get("x-forwarded-host", "").strip()
+    fwd_proto = request.headers.get("x-forwarded-proto", "").strip()
+
+    # Strip port from netloc — Render proxies on port 10000 internally
+    raw_netloc = request.url.netloc
+    host = fwd_host or raw_netloc.split(":")[0]
+    scheme = fwd_proto or ("https" if os.environ.get("RENDER") or os.environ.get("REPLIT_DOMAINS") else "http")
+
+    return f"{scheme}://{host}/api/auth/callback"
 
 
 def _set_session_cookie(response, token: str):
-    """SameSite=Lax works for top-level OAuth redirects and same-site requests
-    without requiring third-party cookie permissions (which browsers block)."""
-    secure = _is_https()
+    """Use SameSite=Lax so cookies work across the OAuth top-level redirect."""
     response.set_cookie(
         "session",
         token,
         httponly=True,
         samesite="lax",
-        secure=secure,
+        secure=False,   # works on both HTTP and HTTPS; avoids proxy-layer cookie drops
         max_age=SESSION_EXPIRE_HOURS * 3600,
         path="/",
     )
@@ -75,14 +88,24 @@ def _set_session_cookie(response, token: str):
 
 # ── Debug endpoint ───────────────────────────────────────────────
 @router.get("/api/auth/debug")
-async def debug_config():
-    cfg = _cfg()
+async def debug_config(request: Request):
+    cfg = _cfg(request)
     return {
-        "client_id_set":     bool(cfg["client_id"]),
-        "client_secret_set": bool(cfg["client_secret"]),
-        "redirect_uri":      cfg["redirect_uri"] or "(not set)",
-        "dashboard_url":     cfg["dashboard_url"] or "(not set)",
-        "secret_key_set":    cfg["secret_key"] != "changeme-secret-key-123",
+        "client_id_set":      bool(cfg["client_id"]),
+        "client_secret_set":  bool(cfg["client_secret"]),
+        "redirect_uri":       cfg["redirect_uri"] or "(not set)",
+        "redirect_uri_source": (
+            "env:REDIRECT_URI" if os.environ.get("REDIRECT_URI") else
+            "env:REPLIT_DEV_DOMAIN" if os.environ.get("REPLIT_DEV_DOMAIN") else
+            "x-forwarded-host" if request.headers.get("x-forwarded-host") else
+            "host-header"
+        ),
+        "dashboard_url":      cfg["dashboard_url"] or "(not set)",
+        "secret_key_set":     cfg["secret_key"] != "changeme-secret-key-123",
+        "host_header":        request.url.netloc,
+        "x_forwarded_host":   request.headers.get("x-forwarded-host", "(not set)"),
+        "x_forwarded_proto":  request.headers.get("x-forwarded-proto", "(not set)"),
+        "session_cookie_set": bool(request.cookies.get("session")),
     }
 
 
@@ -210,7 +233,7 @@ async def logout(request: Request):
     cfg = _cfg(request)
     home = cfg["dashboard_url"] or "/"
     resp = RedirectResponse(home, status_code=302)
-    resp.delete_cookie("session", samesite="lax", secure=_is_https(), path="/")
+    resp.delete_cookie("session", samesite="lax", secure=False, path="/")
     return resp
 
 

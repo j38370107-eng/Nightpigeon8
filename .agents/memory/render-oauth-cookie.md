@@ -1,25 +1,31 @@
 ---
-name: Render OAuth cookie stripping
-description: Render's reverse proxy strips Set-Cookie headers from 3xx redirect responses, breaking OAuth session cookies.
+name: Render OAuth cookie stripping + iOS Safari SameSite
+description: Cookie-based auth fails on Render/iOS Safari due to proxy header stripping and SameSite=None rejection. Use sessionStorage + Bearer token as primary auth path.
 ---
 
-# Render OAuth Cookie Stripping
+# Auth Session Issues on Render / iOS Safari
 
-**The rule:** Never use a `302 RedirectResponse` with `Set-Cookie` on Render (or similar reverse-proxy hosts). The proxy strips `Set-Cookie` from 3xx responses before forwarding to the browser.
+## Two compounding bugs
 
-**Why:** Render's ingress proxy does not forward `Set-Cookie` headers attached to redirect responses. The browser follows the redirect but never receives the cookie, so the session is never established — causing an infinite OAuth loop.
+**Bug 1 — Render proxy strips Set-Cookie from 3xx responses.**
+Never use `302 RedirectResponse` with `Set-Cookie`. Return a `200 HTMLResponse` instead, and do the navigation client-side via `window.location.replace(...)`.
 
-**How to apply:** In OAuth callbacks (and anywhere else a cookie must be set alongside a redirect), return a `200 HTMLResponse` containing a `<meta http-equiv="refresh">` tag and a `<script>window.location.replace(...)</script>` instead of a `RedirectResponse`. Set the cookie on the 200 response. The browser executes the JS/meta redirect client-side AFTER storing the cookie.
+**Bug 2 — iOS Safari rejects SameSite=None cookies.**
+`SameSite=None; Secure` is only needed for cross-domain setups (separate API and dashboard subdomains). For same-domain deployments (Render single-service, Replit), use `SameSite=Lax` — it's more compatible and iOS Safari handles it correctly.
 
-```python
-html = (
-    "<!doctype html><html><head>"
-    f'<meta http-equiv="refresh" content="0;url={dest}">'
-    "</head><body>"
-    f"<script>window.location.replace({repr(dest)});</script>"
-    "</body></html>"
-)
-resp = HTMLResponse(content=html, status_code=200)
-resp.set_cookie("session", token, ...)
-return resp
-```
+**Why:** Both bugs together make cookie-based sessions completely non-functional on Render when accessed from Safari on iOS.
+
+## The robust fix: sessionStorage + Bearer token
+
+Primary auth path bypasses cookies entirely:
+
+1. **Callback page** (200 HTML): embed JWT in a `<script>` tag that stores it in `sessionStorage`, then `window.location.replace(dest)`.
+2. **Frontend `apiFetch`**: read `sessionStorage.getItem('np_token')` and include as `Authorization: Bearer <token>` header on every request.
+3. **Server `get_current_user`**: check `Authorization: Bearer` header first, then fall back to cookie.
+4. **Logout**: return 200 HTML that calls `sessionStorage.removeItem('np_token')` before redirecting.
+5. **Keep the cookie** as a fallback for browsers that block JS storage.
+
+**SameSite rule:**
+- `DASHBOARD_URL` env var set (cross-domain) + HTTPS → `SameSite=None; Secure`
+- Same-domain (no `DASHBOARD_URL`) + HTTPS → `SameSite=Lax; Secure`
+- HTTP dev → `SameSite=Lax; Secure=False`

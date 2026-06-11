@@ -1,4 +1,5 @@
 import os
+import json
 import secrets
 import httpx
 import logging
@@ -41,6 +42,16 @@ def decode_jwt(token: str) -> dict | None:
 
 
 def get_current_user(request: Request) -> dict | None:
+    # Check Authorization: Bearer <token> header first.
+    # This is the primary auth path — the frontend stores the JWT in
+    # sessionStorage and sends it as a Bearer token on every request.
+    # This completely sidesteps proxy/browser cookie issues.
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        user = decode_jwt(auth[7:])
+        if user:
+            return user
+    # Fall back to cookie (set alongside the sessionStorage token for compat)
     token = request.cookies.get("session")
     if not token:
         return None
@@ -83,19 +94,24 @@ def _behind_https() -> bool:
 
 
 def _set_session_cookie(response, token: str):
-    """
-    Use SameSite=None; Secure when behind HTTPS so the cookie is sent on
-    cross-origin JS fetch calls (two-service Render setup: dashboard on a
-    different subdomain than the API).  Fall back to SameSite=Lax for plain
-    HTTP dev environments.
+    """Set the session cookie.
+
+    Use SameSite=None; Secure only for explicitly cross-domain setups where
+    the dashboard lives on a different subdomain from the API (DASHBOARD_URL env
+    var is set).  For same-domain deployments (Render single-service, Replit,
+    local dev) use SameSite=Lax which is more widely supported — especially on
+    iOS Safari which has a known bug rejecting SameSite=None cookies in some
+    contexts.
     """
     https = _behind_https()
+    is_cross_domain = bool(os.environ.get("DASHBOARD_URL", "").strip())
+    samesite = "none" if (https and is_cross_domain) else "lax"
     response.set_cookie(
         "session",
         token,
         httponly=True,
-        samesite="none" if https else "lax",
-        secure=https,           # SameSite=None is only valid with Secure=True
+        samesite=samesite,
+        secure=https,
         max_age=SESSION_EXPIRE_HOURS * 3600,
         path="/",
     )
@@ -238,16 +254,19 @@ async def callback(
     token = create_jwt(session_data)
     log.info(f"Login success for {user_data['username']} ({user_data['id']})")
 
-    # Use a 200 HTML response with JS redirect instead of a 302 redirect.
-    # Render's (and some other) reverse proxies strip Set-Cookie headers from
-    # 3xx responses, so the browser never receives the session cookie.
-    # Returning a 200 with the cookie + a client-side redirect avoids this.
+    # Return a 200 HTML page that:
+    #  1. Sets the JWT in sessionStorage so the frontend can send it as a
+    #     Bearer token — this bypasses ALL cookie proxy/browser issues entirely.
+    #  2. Also sets a cookie as a fallback for browsers that block JS storage.
+    #  3. Uses a JS redirect (not 302) so the Set-Cookie header is never
+    #     stripped by a reverse proxy.
     html = (
         "<!doctype html><html><head>"
-        f'<meta http-equiv="refresh" content="0;url={guilds_page}">'
-        "</head><body>"
-        f'<script>window.location.replace({repr(guilds_page)});</script>'
-        "</body></html>"
+        f'<meta http-equiv="refresh" content="0;url={json.dumps(guilds_page)[1:-1]}">'
+        "</head><body><script>"
+        f"try{{sessionStorage.setItem('np_token',{json.dumps(token)});}}catch(e){{}}"
+        f"window.location.replace({json.dumps(guilds_page)});"
+        "</script></body></html>"
     )
     resp = HTMLResponse(content=html, status_code=200)
     _set_session_cookie(resp, token)
@@ -259,9 +278,18 @@ async def callback(
 async def logout(request: Request):
     cfg = _cfg(request)
     home = cfg["dashboard_url"] or "/"
-    resp = RedirectResponse(home, status_code=302)
+    # Return a 200 HTML page that clears sessionStorage and cookie, then redirects.
+    html = (
+        "<!doctype html><html><body><script>"
+        "try{sessionStorage.removeItem('np_token');}catch(e){}"
+        f"window.location.replace({json.dumps(home)});"
+        "</script></body></html>"
+    )
+    resp = HTMLResponse(content=html, status_code=200)
     https = _behind_https()
-    resp.delete_cookie("session", samesite="none" if https else "lax", secure=https, path="/")
+    is_cross_domain = bool(os.environ.get("DASHBOARD_URL", "").strip())
+    samesite = "none" if (https and is_cross_domain) else "lax"
+    resp.delete_cookie("session", samesite=samesite, secure=https, path="/")
     return resp
 
 

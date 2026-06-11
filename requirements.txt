@@ -10,3 +10,15 @@ pytz>=2024.1
 python-multipart>=0.0.9
 python-dateutil>=2.9.0.post0
 aiosqlite>=0.22.1
+aiosqlite
+asyncpg
+discord-py
+fastapi
+httpx
+python-dateutil
+python-dotenv
+python-jose[cryptography]
+python-multipart
+pytz
+PyYAML
+uvicorn

@@ -17,7 +17,7 @@ async def get_cases(
     action: str = Query(None),
     user_id: int = Query(None),
 ):
-    user = get_current_user(request)
+    user = await get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -82,7 +82,7 @@ async def get_cases(
 
 @router.get("/api/guilds/{guild_id}/cases/{case_id}")
 async def get_case(guild_id: int, case_id: int, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 

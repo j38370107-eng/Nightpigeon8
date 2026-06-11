@@ -232,6 +232,14 @@ async def _create_tables():
             )
         """)
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                session_id TEXT PRIMARY KEY,
+                data JSONB NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL
+            )
+        """)
+
 
 async def get_next_case_number(guild_id: int) -> int:
     pool = await get_pool()

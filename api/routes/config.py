@@ -25,20 +25,15 @@ async def _get_user_guilds(access_token: str) -> list:
 
 @router.get("/api/guilds")
 async def get_guilds(request: Request):
-    user = get_current_user(request)
+    user = await get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    access_token = user.get("access_token")
-    if not access_token:
-        raise HTTPException(status_code=401, detail="No access token")
-
-    user_guilds = await _get_user_guilds(access_token)
+    # Guilds are cached in the session at login time (filtered to Manage Guild / Admin)
+    session_guilds = user.get("guilds", [])
 
     bot = getattr(request.app.state, "bot", None)
     if not bot:
-        # Bot not running — return all user guilds where they have Manage Server
-        MANAGE_GUILD = 0x20
         return [
             {
                 "id": str(g["id"]),
@@ -47,14 +42,13 @@ async def get_guilds(request: Request):
                 "member_count": None,
                 "bot_present": False,
             }
-            for g in user_guilds
-            if g.get("permissions") and int(g["permissions"]) & MANAGE_GUILD
+            for g in session_guilds
         ]
 
-    user_guild_ids = {int(g["id"]) for g in user_guilds}
+    session_guild_ids = {int(g["id"]) for g in session_guilds}
     bot_guilds = []
     for guild in bot.guilds:
-        if guild.id in user_guild_ids:
+        if guild.id in session_guild_ids:
             bot_guilds.append({
                 "id": str(guild.id),
                 "name": guild.name,
@@ -68,7 +62,7 @@ async def get_guilds(request: Request):
 
 @router.get("/api/guilds/{guild_id}/config")
 async def get_guild_config(guild_id: int, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
@@ -78,7 +72,7 @@ async def get_guild_config(guild_id: int, request: Request):
 
 @router.put("/api/guilds/{guild_id}/config")
 async def update_guild_config(guild_id: int, request: Request):
-    user = get_current_user(request)
+    user = await get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
 

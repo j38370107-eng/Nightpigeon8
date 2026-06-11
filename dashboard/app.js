@@ -2,23 +2,11 @@
 
 const API_BASE = (typeof window !== 'undefined' && window.API_BASE) ? window.API_BASE : '';
 
-// ── Token helpers ────────────────────────────────────────────────
-// The JWT is stored in sessionStorage after login and sent as an
-// Authorization: Bearer header on every request.  This is the primary
-// auth path and completely sidesteps cookie proxy/browser issues (e.g.
-// Render stripping Set-Cookie from 3xx responses, iOS Safari rejecting
-// SameSite=None cookies).  A cookie is still set as a fallback.
-function _getToken() {
-  try { return sessionStorage.getItem('np_token'); } catch(e) { return null; }
-}
-
 // ── Fetch helpers ───────────────────────────────────────────────
 async function apiFetch(path, options = {}, redirectOn401 = true) {
-  const token = _getToken();
-  const extraHeaders = token ? { 'Authorization': `Bearer ${token}` } : {};
   const res = await fetch(API_BASE + path, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...extraHeaders, ...(options.headers || {}) },
+    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
   });
   if (res.status === 401) {

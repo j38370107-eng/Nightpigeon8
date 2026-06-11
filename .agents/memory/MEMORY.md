@@ -1,1 +1,1 @@
-- [Render OAuth cookie stripping](render-oauth-cookie.md) — Render's proxy strips Set-Cookie from 3xx responses; use 200 HTML+JS redirect in OAuth callbacks instead.
+- [Auth: server-side sessions](render-oauth-cookie.md) — use DB-backed sessions (sessions table), not JWTs; cookie is a tiny random ID; this is the only approach that works reliably on Render, iOS Safari, and proxies.

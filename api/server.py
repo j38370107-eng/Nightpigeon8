@@ -38,7 +38,7 @@ def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
 
     @app.get("/ping")
     async def ping():
-        return {"status": "ok"}
+        return "pong"
 
     @app.get("/api/healthz")
     async def healthz():

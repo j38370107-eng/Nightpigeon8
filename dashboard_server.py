@@ -58,7 +58,7 @@ def create_dashboard_app() -> FastAPI:
 
     @app.get("/ping")
     async def ping():
-        return {"status": "ok"}
+        return "pong"
 
     return app
 

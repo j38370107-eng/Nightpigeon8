@@ -15,7 +15,7 @@ DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 
 
 def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
-    app = FastAPI(title="Nightpigeon API", docs_url=None, redoc_url=None)
+    app = FastAPI(title="Nightpigeon API", docs_url=None, redoc_url=None, redirect_slashes=False)
 
     allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
     if "*" in allowed_origins:

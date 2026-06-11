@@ -56,4 +56,3 @@ packages = ["libyaml", "postgresql"]
 
 [userenv.shared]
 PORT = "5000"
-REDIRECT_URI = "https://7ac44984-90bf-42d8-874a-59f226e11f5f-00-2dogo099fgjt5.spock.replit.dev/api/auth/callback"

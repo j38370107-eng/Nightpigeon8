@@ -17,11 +17,15 @@ SESSION_EXPIRE_HOURS = 24
 DISCORD_API = "https://discord.com/api/v10"
 
 
-def _cfg():
+def _cfg(request: Request = None):
+    redirect_uri = os.environ.get("REDIRECT_URI", "")
+    if not redirect_uri and request is not None:
+        scheme = "https" if _is_https() else request.url.scheme
+        redirect_uri = f"{scheme}://{request.url.netloc}/api/auth/callback"
     return {
         "client_id":     os.environ.get("CLIENT_ID", ""),
         "client_secret": os.environ.get("CLIENT_SECRET", ""),
-        "redirect_uri":  os.environ.get("REDIRECT_URI", ""),
+        "redirect_uri":  redirect_uri,
         "secret_key":    os.environ.get("API_SECRET_KEY", "changeme-secret-key-123"),
         "dashboard_url": os.environ.get("DASHBOARD_URL", "").rstrip("/"),
     }
@@ -47,15 +51,23 @@ def get_current_user(request: Request) -> dict | None:
     return decode_jwt(token)
 
 
+def _is_https() -> bool:
+    """Detect if we're running behind an HTTPS proxy (Render, Replit, etc.)."""
+    return os.environ.get("HTTPS_PROXY", "").lower() in ("1", "true", "yes") or \
+           os.environ.get("RENDER", "") != "" or \
+           os.environ.get("REPLIT_DOMAINS", "") != ""
+
+
 def _set_session_cookie(response, token: str):
     """SameSite=Lax works for top-level OAuth redirects and same-site requests
     without requiring third-party cookie permissions (which browsers block)."""
+    secure = _is_https()
     response.set_cookie(
         "session",
         token,
         httponly=True,
         samesite="lax",
-        secure=False,
+        secure=secure,
         max_age=SESSION_EXPIRE_HOURS * 3600,
         path="/",
     )
@@ -77,7 +89,7 @@ async def debug_config():
 # ── Login ────────────────────────────────────────────────────────
 @router.get("/api/auth/login")
 async def login(request: Request):
-    cfg = _cfg()
+    cfg = _cfg(request)
 
     if not cfg["client_id"]:
         return HTMLResponse(
@@ -116,7 +128,7 @@ async def callback(
     state: str = None,
     error: str = None,
 ):
-    cfg = _cfg()
+    cfg = _cfg(request)
     dashboard_url = cfg["dashboard_url"]
     guilds_page   = f"{dashboard_url}/guilds" if dashboard_url else "/guilds"
     error_page    = f"{dashboard_url}/?auth_error=1" if dashboard_url else "/?auth_error=1"
@@ -194,11 +206,11 @@ async def callback(
 
 # ── Logout ───────────────────────────────────────────────────────
 @router.get("/api/auth/logout")
-async def logout():
-    cfg = _cfg()
+async def logout(request: Request):
+    cfg = _cfg(request)
     home = cfg["dashboard_url"] or "/"
     resp = RedirectResponse(home, status_code=302)
-    resp.delete_cookie("session", samesite="lax", secure=False, path="/")
+    resp.delete_cookie("session", samesite="lax", secure=_is_https(), path="/")
     return resp
 
 

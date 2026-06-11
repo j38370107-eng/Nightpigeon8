@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nightpigeon — Discord Moderation Bot</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="night-bg"></div>
+<div class="stars"></div>
+
+<div class="app-container">
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">
+      <img src="/static/pigeon.jpeg" alt="Nightpigeon" />
+      <span>Nightpigeon</span>
+    </a>
+    <div class="navbar-links">
+      <a href="/" class="active">Home</a>
+      <a href="/guilds">Dashboard</a>
+      <a href="/docs-page">Documentation</a>
+    </div>
+    <div class="navbar-right">
+      <div class="user-badge" id="user-info">
+        <span>Loading...</span>
+      </div>
+      <a href="/api/auth/login" class="btn btn-primary" id="login-btn" style="display:none">
+        Login with Discord
+      </a>
+      <a href="/api/auth/logout" class="btn btn-secondary" id="logout-btn" style="display:none">
+        Log out
+      </a>
+    </div>
+  </nav>
+
+  <div class="hero">
+    <img src="/static/pigeon.jpeg" alt="Nightpigeon" class="hero-pigeon" />
+    <h1>Nightpigeon</h1>
+    <p class="hero-sub">
+      A powerful, plugin-based moderation bot for Discord.
+      Built for large servers that demand reliability and control.
+    </p>
+    <div class="hero-buttons">
+      <a href="/guilds" class="btn btn-primary" style="font-size:1rem;padding:12px 28px">Dashboard</a>
+      <a href="/docs-page" class="btn btn-secondary" style="font-size:1rem;padding:12px 28px">Documentation</a>
+    </div>
+  </div>
+
+  <main style="max-width: 900px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-bottom: 48px;">
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:12px;">🛡️</div>
+        <h3 style="font-size:1rem; margin-bottom:8px;">Full Moderation</h3>
+        <p style="color:var(--text-secondary); font-size:0.875rem; line-height:1.6">
+          Ban, kick, mute, warn with full case management, timed actions, and DM notifications.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:12px;">🤖</div>
+        <h3 style="font-size:1rem; margin-bottom:8px;">Advanced Automod</h3>
+        <p style="color:var(--text-secondary); font-size:0.875rem; line-height:1.6">
+          13 automod rules including spam, bad words, invite links, caps, emoji flooding, and zalgo.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:12px;">⚙️</div>
+        <h3 style="font-size:1rem; margin-bottom:8px;">YAML Configuration</h3>
+        <p style="color:var(--text-secondary); font-size:0.875rem; line-height:1.6">
+          Fully configurable via YAML. Every message, level, and behavior is customizable per server.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:12px;">📊</div>
+        <h3 style="font-size:1rem; margin-bottom:8px;">Case Tracking</h3>
+        <p style="color:var(--text-secondary); font-size:0.875rem; line-height:1.6">
+          Complete case history for every user with searchable records accessible from the dashboard.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:12px;">🎫</div>
+        <h3 style="font-size:1rem; margin-bottom:8px;">Ticket System</h3>
+        <p style="color:var(--text-secondary); font-size:0.875rem; line-height:1.6">
+          Full ticket system with panels, claiming, closing, user blacklisting, and staff role integration.
+        </p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem; margin-bottom:12px;">🌙</div>
+        <h3 style="font-size:1rem; margin-bottom:8px;">23+ Plugins</h3>
+        <p style="color:var(--text-secondary); font-size:0.875rem; line-height:1.6">
+          Starboard, timezones, reaction roles, reminders, auto-replies, lockdown, and much more.
+        </p>
+      </div>
+    </div>
+
+    <div style="text-align:center; padding: 40px 0;">
+      <p style="color:var(--text-muted); font-size:0.875rem;">
+        Inspired by <a href="https://zeppelin.gg" target="_blank" style="color:var(--accent); text-decoration:none">Zeppelin</a>
+        · Open source · Plugin-based · PostgreSQL-backed
+      </p>
+    </div>
+  </main>
+
+  <footer>
+    <p>Nightpigeon © 2025 · A Zeppelin-inspired Discord moderation bot</p>
+  </footer>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  const user = await loadUser();
+  const loginBtn = document.getElementById('login-btn');
+  const logoutBtn = document.getElementById('logout-btn');
+  const userInfo = document.getElementById('user-info');
+
+  if (user) {
+    userInfo.style.display = 'flex';
+    logoutBtn.style.display = 'inline-flex';
+  } else {
+    userInfo.style.display = 'none';
+    loginBtn.style.display = 'inline-flex';
+  }
+});
+</script>
+</body>
+</html>

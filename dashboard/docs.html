@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentation — Nightpigeon</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="night-bg"></div>
+<div class="stars"></div>
+
+<div class="app-container">
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">
+      <img src="/static/pigeon.jpeg" alt="Nightpigeon" />
+      <span>Nightpigeon</span>
+    </a>
+    <div class="navbar-links">
+      <a href="/">Home</a>
+      <a href="/guilds">Dashboard</a>
+      <a href="/docs-page" class="active">Documentation</a>
+    </div>
+    <div class="navbar-right">
+      <div class="user-badge"></div>
+    </div>
+  </nav>
+
+  <main style="max-width:1100px; padding-top:32px;">
+    <div class="docs-layout">
+      <!-- Sidebar Nav -->
+      <div class="docs-sidebar">
+        <div class="docs-nav-section">
+          <h4>General</h4>
+          <a href="#intro">Introduction</a>
+        </div>
+        <div class="docs-nav-section">
+          <h4>Configuration</h4>
+          <a href="#config-format">Configuration format</a>
+          <a href="#plugin-config">Plugin configuration</a>
+          <a href="#permissions">Permissions</a>
+        </div>
+        <div class="docs-nav-section">
+          <h4>Reference</h4>
+          <a href="#duration-types">Duration types</a>
+        </div>
+        <div class="docs-nav-section">
+          <h4>Plugins</h4>
+          <a href="#moderation">Moderation</a>
+          <a href="#mass-actions">Mass Actions</a>
+          <a href="#cases">Cases</a>
+          <a href="#automod">Automod</a>
+          <a href="#logging">Logging</a>
+          <a href="#welcome">Welcome</a>
+          <a href="#roles">Roles</a>
+          <a href="#starboard">Starboard</a>
+          <a href="#tickets">Tickets</a>
+          <a href="#reaction-roles">Reaction Roles</a>
+          <a href="#timezones">Timezones</a>
+          <a href="#reminders">Reminders</a>
+          <a href="#autoreply">Auto-reply</a>
+          <a href="#lockdown">Lockdown</a>
+          <a href="#escalation">Escalation</a>
+          <a href="#utility">Utility</a>
+          <a href="#notes">Notes</a>
+          <a href="#modnick">Modnick</a>
+          <a href="#history">History</a>
+        </div>
+      </div>
+
+      <!-- Content -->
+      <div class="docs-content">
+
+        <div class="docs-section" id="intro">
+          <h1>Nightpigeon Documentation</h1>
+          <p>Nightpigeon is a plugin-based Discord moderation bot inspired by Zeppelin. Each feature is a plugin that can be independently enabled and configured via YAML in the dashboard.</p>
+        </div>
+
+        <div class="docs-section" id="config-format">
+          <h2>Configuration Format</h2>
+          <p>Each guild has a YAML config file managed through the dashboard. The top-level structure is:</p>
+          <pre><code>prefix: '!'
+
+levels:
+  users:
+    "123456789012345678": 100   # user ID: level
+  roles:
+    "987654321098765432": 50    # role ID: level
+
+plugins:
+  moderation:
+    enabled: true
+    config:
+      mute_role: 123456789012345678
+      dm_on_action: true</code></pre>
+          <p>All configuration is hot-loaded — no bot restart needed after saving.</p>
+        </div>
+
+        <div class="docs-section" id="permissions">
+          <h2>Permissions (Levels)</h2>
+          <p>Nightpigeon uses a numeric level system (0–100), plus level 1000 for the bot owner.</p>
+          <table>
+            <thead><tr><th>Level</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>0</td><td>Regular users (no permissions)</td></tr>
+              <tr><td>25</td><td>Junior mods — warn, view cases</td></tr>
+              <tr><td>50</td><td>Moderators — kick, mute</td></tr>
+              <tr><td>60</td><td>Senior mods — ban</td></tr>
+              <tr><td>75</td><td>Admins — delete cases</td></tr>
+              <tr><td>100</td><td>Server owner / full access</td></tr>
+              <tr><td>1000</td><td>Bot owner</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="docs-section" id="duration-types">
+          <h2>Duration Types</h2>
+          <p>Durations are used for bans, mutes, tempbans, reminders, and timed roles.</p>
+          <table>
+            <thead><tr><th>Suffix</th><th>Meaning</th><th>Example</th></tr></thead>
+            <tbody>
+              <tr><td><code>s</code></td><td>Seconds</td><td><code>30s</code></td></tr>
+              <tr><td><code>m</code></td><td>Minutes</td><td><code>5m</code></td></tr>
+              <tr><td><code>h</code></td><td>Hours</td><td><code>2h</code></td></tr>
+              <tr><td><code>d</code></td><td>Days</td><td><code>7d</code></td></tr>
+              <tr><td><code>w</code></td><td>Weeks</td><td><code>1w</code></td></tr>
+              <tr><td><code>mo</code></td><td>Months</td><td><code>1mo</code></td></tr>
+              <tr><td><code>y</code></td><td>Years (max 180d)</td><td><code>1y</code></td></tr>
+              <tr><td><code>perm</code></td><td>Permanent</td><td><code>perm</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="docs-section" id="moderation">
+          <h2>Moderation Plugin</h2>
+          <h3>Commands</h3>
+          <table>
+            <thead><tr><th>Command</th><th>Usage</th><th>Default Level</th></tr></thead>
+            <tbody>
+              <tr><td><code>ban</code></td><td><code>!ban @user [duration] [reason]</code></td><td>60</td></tr>
+              <tr><td><code>forceban</code></td><td><code>!forceban &lt;userID&gt; [duration] [reason]</code></td><td>70</td></tr>
+              <tr><td><code>unban</code></td><td><code>!unban &lt;userID&gt; [reason]</code></td><td>60</td></tr>
+              <tr><td><code>kick</code></td><td><code>!kick @user [reason]</code></td><td>50</td></tr>
+              <tr><td><code>mute</code></td><td><code>!mute @user [duration] [reason]</code></td><td>50</td></tr>
+              <tr><td><code>unmute</code></td><td><code>!unmute @user [reason]</code></td><td>50</td></tr>
+              <tr><td><code>warn</code></td><td><code>!warn @user [reason]</code></td><td>25</td></tr>
+              <tr><td><code>addcase</code></td><td><code>!addcase @user &lt;action&gt; [reason]</code></td><td>25</td></tr>
+              <tr><td><code>editcase</code></td><td><code>!editcase &lt;#&gt; reason|duration &lt;value&gt;</code></td><td>50</td></tr>
+              <tr><td><code>deletecase</code></td><td><code>!deletecase &lt;#&gt;</code></td><td>75</td></tr>
+              <tr><td><code>reason</code></td><td><code>!reason &lt;#&gt; &lt;new reason&gt;</code></td><td>50</td></tr>
+              <tr><td><code>purge</code></td><td><code>!purge &lt;count&gt; [@user]</code></td><td>25</td></tr>
+              <tr><td><code>slowmode</code></td><td><code>!slowmode #channel &lt;duration|0&gt;</code></td><td>50</td></tr>
+            </tbody>
+          </table>
+          <h3>Configuration</h3>
+          <pre><code>moderation:
+  enabled: true
+  config:
+    mute_role: 123456789012345678
+    dm_on_action: true
+    remove_roles_on_mute: true
+    levels:
+      ban: 60
+      kick: 50
+      mute: 50
+      warn: 25
+      deletecase: 75</code></pre>
+        </div>
+
+        <div class="docs-section" id="automod">
+          <h2>Automod Plugin</h2>
+          <p>13 built-in rules. Each rule supports custom actions: <code>delete</code>, <code>dm_user</code>, <code>warn</code>, <code>mute</code>, <code>kick</code>, <code>ban</code>.</p>
+          <pre><code>automod:
+  enabled: true
+  ignore_roles: [123456789]
+  ignore_channels: [123456789]
+  rules:
+    spam:
+      enabled: true
+      max_messages: 5
+      per_seconds: 4
+      action:
+        delete: true
+        warn: true
+    bad_words:
+      enabled: true
+      words: ["word1", "word2", "wild*card"]
+      action:
+        delete: true
+        dm_user: true
+      message: "Your message was removed for containing a prohibited word."
+    invite_links:
+      enabled: true
+      allow_own_server: true
+      action:
+        delete: true
+    caps_spam:
+      enabled: true
+      min_length: 10
+      max_caps_percent: 70
+      action:
+        delete: true</code></pre>
+          <p><strong>Available rules:</strong> <code>spam</code>, <code>bad_words</code>, <code>invite_links</code>, <code>mass_mentions</code>, <code>caps_spam</code>, <code>link_spam</code>, <code>repeated_text</code>, <code>mass_emojis</code>, <code>zalgo</code>, <code>newline_spam</code>, <code>attachment_spam</code>, <code>mention_everyone_attempt</code>, <code>new_account_gate</code></p>
+        </div>
+
+        <div class="docs-section" id="logging">
+          <h2>Logging Plugin</h2>
+          <pre><code>logging:
+  enabled: true
+  ignore_channels: []
+  ignore_roles: []
+  channels:
+    mod_log: 123456789
+    message_edit: 123456789
+    message_delete: 123456789
+    member_join: 123456789
+    member_leave: 123456789
+    member_ban: 123456789
+    member_unban: 123456789
+    nickname_change: 123456789
+    role_given: 123456789
+    role_removed: 123456789
+    voice_update: 123456789
+    channel_create: 123456789
+    channel_delete: 123456789</code></pre>
+        </div>
+
+        <div class="docs-section" id="welcome">
+          <h2>Welcome Plugin</h2>
+          <pre><code>welcome:
+  enabled: true
+  wait_for_verification: false
+  welcome:
+    enabled: true
+    channel: 123456789
+    ping: true
+    message: "Welcome to {server}, {user}! You are member #{member_count}."
+    delete_after: 30
+  farewell:
+    enabled: false
+    channel: 123456789
+    message: "{user} has left {server}."
+  join_role:
+    enabled: false
+    role: 123456789
+    delay: 0</code></pre>
+        </div>
+
+        <div class="docs-section" id="tickets">
+          <h2>Tickets Plugin</h2>
+          <pre><code>tickets:
+  enabled: true
+  config:
+    category: 123456789
+    staff_roles: [123456789]
+    log_channel: 123456789
+    max_open_per_user: 1
+    panel:
+      type: button
+      button_label: "Open Ticket"
+      button_emoji: "🎫"
+      button_style: primary
+      message: "Click below to open a support ticket."
+    messages:
+      ticket_created: "Your ticket: {channel}"
+      ticket_exists: "You already have an open ticket."</code></pre>
+          <h3>Commands</h3>
+          <p><code>!ticket panel</code> — Send ticket panel in configured channel</p>
+          <p><code>!ticket close [reason]</code> — Close a ticket</p>
+          <p><code>!ticket add @user</code> — Add user to ticket</p>
+          <p><code>!ticket remove @user</code> — Remove user from ticket</p>
+          <p><code>!ticket claim</code> — Claim a ticket</p>
+          <p><code>!ticket delete</code> — Delete ticket channel</p>
+        </div>
+
+        <div class="docs-section" id="starboard">
+          <h2>Starboard Plugin</h2>
+          <pre><code>starboard:
+  enabled: true
+  config:
+    channel: 123456789
+    emoji: "⭐"
+    threshold: 3
+    self_star: false
+    ignore_channels: []</code></pre>
+        </div>
+
+        <div class="docs-section" id="reaction-roles">
+          <h2>Reaction Roles Plugin</h2>
+          <pre><code>reaction_roles:
+  enabled: true
+  groups:
+    - type: button
+      channel_id: 123456789
+      message: "Pick your roles!"
+      roles:
+        - label: "Gaming"
+          role: 123456789
+          style: primary
+          emoji: "🎮"
+    - type: dropdown
+      channel_id: 123456789
+      placeholder: "Choose a region"
+      max_values: 1
+      roles:
+        - label: "NA"
+          value: "123456789"
+          role: 123456789
+    - type: emoji
+      channel_id: 123456789
+      message_id: 123456789
+      roles:
+        "🎮": 123456789</code></pre>
+        </div>
+
+        <div class="docs-section" id="escalation">
+          <h2>Escalation Plugin</h2>
+          <pre><code>escalation:
+  enabled: true
+  manual:
+    enabled: true
+    thresholds:
+      - count: 3
+        action: mute
+        duration: 1h
+        reason: "3 infractions — automatic mute"
+      - count: 5
+        action: ban
+        duration: 7d
+        reason: "5 infractions — automatic ban"
+  automod:
+    spam:
+      thresholds:
+        - count: 5
+          action: mute
+          duration: 30m
+        - count: 10
+          action: ban
+          duration: 1d</code></pre>
+        </div>
+
+        <div class="docs-section" id="reminders">
+          <h2>Reminders Plugin</h2>
+          <pre><code>reminders:
+  enabled: true
+  config:
+    can_use: true</code></pre>
+          <h3>Commands</h3>
+          <p><code>!remind me &lt;duration&gt; &lt;message&gt;</code></p>
+          <p><code>!remind list</code></p>
+          <p><code>!remind cancel &lt;id&gt;</code></p>
+        </div>
+
+        <div class="docs-section" id="lockdown">
+          <h2>Lockdown Plugin</h2>
+          <pre><code>lockdown:
+  enabled: true
+  config:
+    lockdown_channels: []
+    log_channel: 123456789
+    messages:
+      locked: "🔒 Channel locked. Reason: {reason}"
+      unlocked: "🔓 Channel unlocked."</code></pre>
+          <h3>Commands</h3>
+          <p><code>!lockdown [#channel|-server] [reason]</code></p>
+          <p><code>!unlock [#channel|-server]</code></p>
+        </div>
+
+        <div class="docs-section" id="utility">
+          <h2>Utility Plugin</h2>
+          <pre><code>utility:
+  enabled: true
+  config:
+    levels:
+      userinfo: 0
+      lookup: 25
+      bansearch: 25</code></pre>
+          <h3>Commands</h3>
+          <p><code>!userinfo [@user]</code> · <code>!avatar [@user]</code> · <code>!banner [@user]</code></p>
+          <p><code>!serverinfo</code> · <code>!botinfo</code> · <code>!channelinfo [#ch]</code></p>
+          <p><code>!roleinfo @role</code> · <code>!roles [@user]</code> · <code>!joined [@user]</code></p>
+          <p><code>!lookup &lt;userID&gt;</code> · <code>!bansearch &lt;userID&gt;</code></p>
+          <p><code>!casecount @user</code> · <code>!permissions [@user] [#ch]</code></p>
+          <p><code>!timestamp &lt;time&gt;</code> · <code>!charinfo &lt;char&gt;</code></p>
+        </div>
+
+        <div class="docs-section" id="notes">
+          <h2>Notes Plugin</h2>
+          <pre><code>notes:
+  enabled: true
+  config:
+    levels:
+      note: 25
+      viewnotes: 25
+      deletenote: 50</code></pre>
+          <h3>Commands</h3>
+          <p><code>!note @user &lt;text&gt;</code> · <code>!viewnote &lt;#&gt;</code></p>
+          <p><code>!viewnotes @user</code> · <code>!deletenote &lt;#&gt;</code></p>
+          <p><code>!notesearch @user &lt;keyword&gt;</code></p>
+        </div>
+
+        <div class="docs-section" id="history">
+          <h2>History Plugin</h2>
+          <pre><code>history:
+  enabled: true
+  config:
+    required_level: 25</code></pre>
+          <p><code>!history @user</code> — Shows full moderation history and automod hit counts.</p>
+        </div>
+
+        <div class="docs-section" id="modnick">
+          <h2>Modnick Plugin</h2>
+          <pre><code>modnick:
+  enabled: true
+  config:
+    replacement_name: "Moderated Username"
+    block_hoisting: true
+    block_invisible: true
+    block_too_short: true
+    rename_on_join: true
+    rename_on_update: true
+    custom_patterns: []
+    log_channel: 123456789</code></pre>
+        </div>
+
+        <div class="docs-section" id="mass-actions">
+          <h2>Mass Actions Plugin</h2>
+          <h3>Commands</h3>
+          <p><code>!masswarn @u1 @u2 ... [reason]</code></p>
+          <p><code>!massmute @u1 @u2 ... [duration] [reason]</code></p>
+          <p><code>!masskick @u1 @u2 ... [reason]</code></p>
+          <p><code>!massban @u1 @u2 ... [duration] [reason]</code></p>
+          <p><code>!massunban &lt;id1&gt; &lt;id2&gt; ...</code></p>
+          <pre><code>mass_actions:
+  enabled: true
+  config:
+    mass_limit: 20</code></pre>
+        </div>
+
+        <div class="docs-section" id="cases">
+          <h2>Cases Plugin</h2>
+          <h3>Commands</h3>
+          <p><code>!case &lt;#&gt;</code> · <code>!cases @user</code> · <code>!servercases</code></p>
+          <pre><code>cases:
+  enabled: true
+  config:
+    required_level: 25
+    cases_per_page: 5</code></pre>
+        </div>
+
+        <div class="docs-section" id="autoreply">
+          <h2>Auto-reply Plugin</h2>
+          <pre><code>autoreply:
+  enabled: true
+  config:
+    required_level: 50</code></pre>
+          <h3>Commands</h3>
+          <p><code>!autoreply add &lt;type&gt; &lt;trigger&gt; | &lt;response&gt;</code></p>
+          <p><code>!autoreply list</code> · <code>!autoreply delete &lt;id&gt;</code></p>
+          <p><code>!autoreply test &lt;message&gt;</code></p>
+          <p>Types: <code>contains</code>, <code>exact</code>, <code>startswith</code>, <code>endswith</code>, <code>regex</code></p>
+        </div>
+
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <p>Nightpigeon Documentation</p>
+  </footer>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+// Highlight active doc link on scroll
+const sections = document.querySelectorAll('.docs-section[id]');
+const navLinks = document.querySelectorAll('.docs-nav-section a');
+
+function highlightSection() {
+  let current = '';
+  sections.forEach(section => {
+    const top = section.getBoundingClientRect().top;
+    if (top <= 100) current = section.id;
+  });
+  navLinks.forEach(a => {
+    a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+  });
+}
+
+window.addEventListener('scroll', highlightSection);
+
+// Smooth scroll for anchor links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1629 @@
+# NIGHTPIGEON BOT — COMPLETE REPLIT AGENT PROMPT
+
+> Paste this entire document into Replit Agent. Every section is required. Do not skip any section.
+
+---
+
+## PROJECT OVERVIEW
+
+Build a fully self-hosted, plugin-based Discord moderation bot called **Nightpigeon** written entirely in **Python**. The bot is inspired by Zeppelin (zeppelin.gg) in architecture and configuration philosophy but is a completely original project. It uses YAML-based per-server configuration stored in a PostgreSQL database hosted on Aiven. The bot and its API backend are hosted together as a single Render Web Service. The web dashboard is hosted as a separate Render Static Site. There is NO whitelist system — the bot joins any server freely.
+
+---
+
+## DEPLOYMENT ARCHITECTURE
+
+You will create exactly **2 Render services**:
+
+### Service 1 — Bot + API (Render Web Service)
+- Runs the Python Discord bot (`bot.py`) AND a FastAPI HTTP server in the same process using `asyncio`
+- The FastAPI server exposes REST endpoints that the dashboard calls for reading/writing YAML configs and viewing cases
+- The bot connects to Aiven PostgreSQL using `asyncpg`
+- The FastAPI server also uses `asyncpg` (same connection pool)
+- Render Web Service type, Python runtime, pinned to Python 3.12 (add `.python-version` file to repo root containing just `3.12`)
+- Start command: `python main.py`
+- The API listens on `0.0.0.0:$PORT` (Render sets `PORT` automatically)
+- Add a `/ping` endpoint that returns `{"status": "ok"}` for UptimeRobot keepalive
+
+### Service 2 — Dashboard (Render Static Site)
+- A standalone single-page web app built with plain HTML, CSS, and vanilla JavaScript (no React, no Node build step, no npm required)
+- Communicates with Service 1's FastAPI API via `fetch()` calls
+- Served as a static site on Render
+- Build command: none (static files, just set publish directory to `dashboard/`)
+- All dashboard files live in a `dashboard/` folder in the repo
+
+---
+
+## REPOSITORY STRUCTURE
+
+```
+nightpigeon/
+├── main.py                   # Entry point: starts bot + API server together
+├── .python-version           # Contains just: 3.12
+├── requirements.txt          # All Python dependencies
+├── .env.example              # Example env vars (never commit real .env)
+├── bot/
+│   ├── __init__.py
+│   ├── core/
+│   │   ├── __init__.py
+│   │   ├── bot.py            # NightpigeonBot class (extends commands.Bot)
+│   │   ├── config_loader.py  # Loads and parses YAML config from DB per guild
+│   │   ├── level_check.py    # Level permission checker decorator
+│   │   ├── message_formatter.py  # Formats all bot messages (plain text or embed)
+│   │   └── database.py       # asyncpg pool setup and DB helpers
+│   └── plugins/
+│       ├── __init__.py
+│       ├── moderation.py
+│       ├── mass_actions.py
+│       ├── cases.py
+│       ├── levels.py
+│       ├── logging_plugin.py
+│       ├── automod.py
+│       ├── escalation.py
+│       ├── command_aliases.py
+│       ├── preset_reasons.py
+│       ├── utility.py
+│       ├── welcome.py
+│       ├── notes.py
+│       ├── roles.py
+│       ├── starboard.py
+│       ├── timezones.py
+│       ├── reaction_roles.py
+│       ├── tickets.py
+│       ├── autoreply.py
+│       ├── auto_reactions.py
+│       ├── auto_channel_clean.py
+│       ├── slowmode_auto.py
+│       ├── lockdown.py
+│       ├── modnick.py
+│       ├── history.py
+│       ├── reminders.py
+├── api/
+│   ├── __init__.py
+│   ├── server.py             # FastAPI app
+│   └── routes/
+│       ├── config.py         # GET/PUT guild YAML config
+│       ├── cases.py          # GET guild cases
+│       └── auth.py           # Discord OAuth2
+└── dashboard/
+    ├── index.html            # Login / landing
+    ├── guilds.html           # Guild picker
+    ├── config.html           # YAML editor per guild
+    ├── cases.html            # Cases viewer
+    ├── style.css             # Nightpigeon theme (see THEME section)
+    └── app.js                # All JS logic
+```
+
+---
+
+## ENVIRONMENT VARIABLES
+
+The following must be set in Render's environment variables panel for the Bot+API service. Document all of these in `.env.example`:
+
+```
+DISCORD_TOKEN=          # Bot token from Discord Developer Portal
+CLIENT_ID=              # Discord application client ID
+CLIENT_SECRET=          # Discord application client secret
+REDIRECT_URI=           # https://your-dashboard-url/callback.html
+DATABASE_URL=           # Aiven PostgreSQL connection string (postgresql://...)
+BOT_OWNER_ID=           # Your personal Discord user ID (bot owner, level 1000)
+API_SECRET_KEY=         # Random secret string for signing JWT sessions
+ALLOWED_ORIGINS=        # Comma-separated list of dashboard URLs allowed by CORS
+PORT=8000               # Render sets this automatically, default 8000
+```
+
+---
+
+## DATABASE SETUP (Aiven PostgreSQL via asyncpg)
+
+On startup, `database.py` must run all `CREATE TABLE IF NOT EXISTS` statements. The bot creates its own tables — no manual SQL required.
+
+```sql
+-- Per-server YAML configuration
+CREATE TABLE IF NOT EXISTS guild_configs (
+  guild_id BIGINT PRIMARY KEY,
+  config TEXT NOT NULL DEFAULT ''
+);
+
+-- All moderation cases (warns, bans, kicks, mutes, notes, etc.)
+CREATE TABLE IF NOT EXISTS cases (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  case_number INT NOT NULL,         -- per-guild case number, auto-incremented
+  user_id BIGINT NOT NULL,
+  user_tag TEXT,                     -- cached username#discriminator at time of action
+  moderator_id BIGINT NOT NULL,
+  moderator_tag TEXT,
+  action TEXT NOT NULL,              -- ban, forceban, unban, kick, mute, unmute, warn, note, addcase
+  reason TEXT DEFAULT 'No reason provided',
+  duration TEXT DEFAULT NULL,        -- e.g. "7d", "1h", "permanent"
+  expires_at TIMESTAMP DEFAULT NULL, -- for timed bans/mutes
+  created_at TIMESTAMP DEFAULT NOW(),
+  active BOOLEAN DEFAULT TRUE        -- false when ban/mute expires
+);
+
+-- Tags (custom commands)
+CREATE TABLE IF NOT EXISTS tags (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  name TEXT NOT NULL,
+  content TEXT NOT NULL,
+  creator_id BIGINT,
+  created_at TIMESTAMP DEFAULT NOW(),
+  UNIQUE(guild_id, name)
+);
+
+-- Muted users (for role restore on unmute)
+CREATE TABLE IF NOT EXISTS muted_users (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  removed_roles BIGINT[],            -- role IDs that were removed on mute
+  expires_at TIMESTAMP DEFAULT NULL,
+  UNIQUE(guild_id, user_id)
+);
+
+-- Timed bans (for auto-unban)
+CREATE TABLE IF NOT EXISTS timed_bans (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  UNIQUE(guild_id, user_id)
+);
+
+-- Reminders
+CREATE TABLE IF NOT EXISTS reminders (
+  id SERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL,
+  guild_id BIGINT,
+  channel_id BIGINT,
+  message TEXT NOT NULL,
+  remind_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Starboard
+CREATE TABLE IF NOT EXISTS starboard_entries (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  original_message_id BIGINT NOT NULL UNIQUE,
+  starboard_message_id BIGINT,
+  star_count INT DEFAULT 0,
+  channel_id BIGINT,
+  author_id BIGINT
+);
+
+-- Reaction roles
+CREATE TABLE IF NOT EXISTS reaction_roles (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  message_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL,
+  type TEXT NOT NULL,                -- emoji | button | dropdown
+  identifier TEXT NOT NULL,          -- emoji string, button custom_id, or select option value
+  role_id BIGINT NOT NULL
+);
+
+-- Tickets
+CREATE TABLE IF NOT EXISTS tickets (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL UNIQUE,
+  user_id BIGINT NOT NULL,
+  ticket_number INT NOT NULL,
+  status TEXT DEFAULT 'open',        -- open | closed | deleted
+  claimed_by BIGINT DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Ticket blacklist
+CREATE TABLE IF NOT EXISTS ticket_blacklist (
+  guild_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  reason TEXT,
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- Timezones
+CREATE TABLE IF NOT EXISTS user_timezones (
+  user_id BIGINT PRIMARY KEY,
+  timezone TEXT NOT NULL
+);
+
+-- Auto-reply rules
+CREATE TABLE IF NOT EXISTS auto_replies (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  trigger TEXT NOT NULL,
+  response TEXT NOT NULL,
+  trigger_type TEXT DEFAULT 'contains',  -- contains | exact | startswith | endswith | regex
+  match_case BOOLEAN DEFAULT FALSE,
+  reply_type TEXT DEFAULT 'message',     -- message | reply | dm
+  delete_trigger BOOLEAN DEFAULT FALSE,
+  delete_after INT DEFAULT NULL,
+  ignore_roles BIGINT[] DEFAULT '{}',
+  ignore_channels BIGINT[] DEFAULT '{}',
+  required_roles BIGINT[] DEFAULT '{}',
+  required_channels BIGINT[] DEFAULT '{}'
+);
+
+-- Auto-reactions
+CREATE TABLE IF NOT EXISTS auto_reactions (
+  id SERIAL PRIMARY KEY,
+  guild_id BIGINT NOT NULL,
+  trigger TEXT NOT NULL,
+  trigger_type TEXT DEFAULT 'contains',
+  emojis TEXT[] NOT NULL,
+  ignore_channels BIGINT[] DEFAULT '{}',
+  required_channels BIGINT[] DEFAULT '{}'
+);
+
+-- Auto channel clean schedule
+CREATE TABLE IF NOT EXISTS auto_channel_clean (
+  guild_id BIGINT NOT NULL,
+  channel_id BIGINT NOT NULL,
+  interval_seconds INT NOT NULL,
+  last_cleaned TIMESTAMP DEFAULT NOW(),
+  PRIMARY KEY (guild_id, channel_id)
+);
+
+-- Dashboard sessions (JWT-based, stored in memory — no DB table needed)
+-- OAuth state nonces
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+---
+
+## CORE ARCHITECTURE
+
+### `main.py`
+Starts both the Discord bot and the FastAPI server in the same asyncio event loop using `asyncio.gather()`. Use `uvicorn` programmatically with `uvicorn.Config` and `uvicorn.Server` so both can share the same loop.
+
+### `bot/core/config_loader.py`
+- `async def get_config(guild_id: int) -> dict` — fetches raw YAML text from `guild_configs` table, parses with `yaml.safe_load()`, returns dict. Returns `{}` if no config exists.
+- `async def save_config(guild_id: int, config_text: str)` — validates YAML (raises ValueError if invalid), saves to DB.
+- Config is NOT cached in memory. Every config read hits the DB. This ensures the dashboard and bot always use the same config.
+
+### `bot/core/level_check.py`
+The level system is a permission hierarchy defined in the YAML. Levels are numbers 1–100. Bot owner is always level 1000.
+
+Levels can be assigned to:
+- Specific user IDs
+- Specific role IDs
+
+The bot takes the **highest level** found across all of a user's role IDs and their direct user ID entry.
+
+```yaml
+# In guild YAML config — levels section
+levels:
+  users:
+    "123456789012345678": 100   # This user ID has level 100
+    "987654321098765432": 50    # This user ID has level 50
+  roles:
+    "111111111111111111": 75    # Everyone with this role has level 75
+    "222222222222222222": 25    # Everyone with this role has level 25
+```
+
+`level_check.py` must expose:
+- `async def get_user_level(guild_id, user_id, member) -> int` — checks bot owner first (returns 1000), then checks YAML levels.users and levels.roles and returns the highest match, or 0 if none found.
+- `def require_level(level: int)` — a decorator for bot commands that checks the invoking user's level and responds with the configured `no_permission` message if they don't meet the requirement.
+
+### `bot/core/message_formatter.py`
+ALL bot responses go through this module. Default format is **plain text**. Embeds are opt-in via YAML.
+
+The formatter resolves a message key from the guild's YAML config. If the key exists and is a string, it's used as plain text with variable substitution. If the key is a dict with an `embed:` key, it builds a `discord.Embed`. If the key doesn't exist in YAML, it falls back to the hardcoded defaults in this file.
+
+Variable substitution uses Python `.format()` with named keys: `{user}`, `{server}`, `{reason}`, `{duration}`, `{case}`, `{mod}`, `{count}`, etc.
+
+**Hardcoded plain text defaults (used when no YAML override exists):**
+
+```python
+DEFAULTS = {
+  # Moderation — channel replies
+  "ban_reply":        "{user} has been banned | Case: {case}",
+  "forceban_reply":   "{user} has been forcebanned | Case: {case}",
+  "unban_reply":      "{user} has been unbanned | Case: {case}",
+  "kick_reply":       "{user} has been kicked | Case: {case}",
+  "mute_reply":       "{user} has been muted | Case: {case}",
+  "unmute_reply":     "{user} has been unmuted | Case: {case}",
+  "warn_reply":       "{user} has been warned | Case: {case}",
+  "addcase_reply":    "Case added for {user} | Case: {case}",
+  "note_reply":       "Note added for {user} | Case: {case}",
+  "deletecase_reply": "Case {case} deleted",
+  "editcase_reply":   "Case {case} updated",
+
+  # Moderation — DMs
+  "ban_dm":           "You have been banned from {server} for the following reason: {reason} | Duration: {duration}",
+  "forceban_dm":      "You have been banned from {server} for the following reason: {reason} | Duration: {duration}",
+  "kick_dm":          "You have been kicked from {server} for the following reason: {reason}",
+  "mute_dm":          "You have been muted in {server} for the following reason: {reason} | Duration: {duration}",
+  "unmute_dm":        "You have been unmuted in {server}",
+  "warn_dm":          "You have been warned in {server} for the following reason: {reason}",
+  "unban_dm":         "You have been unbanned from {server}",
+
+  # Cases
+  "no_permission":    "You do not have permission to use this command.",
+  "case_not_found":   "Case {case} not found.",
+  "user_not_found":   "User not found.",
+}
+```
+
+YAML override example — plain text:
+```yaml
+plugins:
+  moderation:
+    messages:
+      ban_reply: "🔨 {user} was banned. Reason: {reason} | Case #{case}"
+```
+
+YAML override example — embed:
+```yaml
+plugins:
+  moderation:
+    messages:
+      ban_reply:
+        embed:
+          title: "User Banned"
+          description: "{user} was banned for: {reason}"
+          color: 0xFF0000
+          footer: "Case #{case}"
+```
+
+---
+
+## DURATION PARSING
+
+All timed actions (ban, mute, temprole) use a shared `parse_duration(text: str) -> timedelta | None` function in `bot/core/duration.py`.
+
+Supported formats: `30s`, `5m`, `2h`, `7d`, `1w`, `1mo` (30 days), `1y` (365 days).
+
+**Maximum duration cap: 180 days.** Any duration over 180 days is rejected with an error message. The word `permanent` or `perm` returns `None` (meaning no expiry).
+
+---
+
+## PLUGINS — COMPLETE SPECIFICATION
+
+Every plugin is a `discord.ext.commands.Cog` loaded with `await bot.load_extension(...)` from `main.py`. Every plugin reads its config from `await get_config(ctx.guild.id)` at command invocation time (never cached). Every command goes through `require_level()`. Every response goes through `message_formatter.py`.
+
+---
+
+### PLUGIN 1: `plugins/moderation.py`
+
+All moderation commands. Every action that affects a user creates a case in the `cases` table and increments the guild's per-guild case counter. Every action sends a DM to the affected user (unless `dm_on_action: false` in their plugin config). Every action posts a channel reply.
+
+**Commands:**
+
+- `!ban @user [duration] [reason]`
+  - Bans the user from the server
+  - Optional timed ban: e.g. `!ban @user 7d Spamming` — auto-unbans after 7 days
+  - Max duration 180 days
+  - Creates ban case in DB
+  - Inserts into `timed_bans` if duration set
+  - Sends ban DM before banning
+  - Posts ban_reply in channel
+
+- `!forceban <user_id> [duration] [reason]`
+  - Bans a user by ID even if they are not in the server
+  - Uses `guild.ban(discord.Object(id=user_id))`
+  - Same behavior as ban otherwise
+
+- `!unban <user_id_or_tag> [reason]`
+  - Unbans the user
+  - Removes from `timed_bans` if present
+  - Creates unban case
+
+- `!kick @user [reason]`
+  - Kicks the user
+  - Sends kick DM before kicking
+  - Creates kick case
+
+- `!mute @user [duration] [reason]`
+  - Applies the mute role (configured in YAML as `mute_role: ROLE_ID`)
+  - Before adding mute role, saves the user's current roles (excluding @everyone and the mute role) to `muted_users.removed_roles`
+  - Removes all non-essential roles from the user (configurable: `remove_roles_on_mute: true`)
+  - If duration set, stores expiry in `muted_users.expires_at`
+  - Sends mute DM
+  - Creates mute case
+
+- `!unmute @user [reason]`
+  - Removes the mute role
+  - Restores all roles that were saved in `muted_users.removed_roles`
+  - Deletes the `muted_users` row
+  - Sends unmute DM
+  - Creates unmute case
+
+- `!warn @user [reason]`
+  - Creates a warn case
+  - Sends warn DM
+  - Posts warn_reply
+
+- `!addcase @user <action> [reason]`
+  - Creates a case silently (no DM to user)
+  - Supported actions: warn, note, kick, ban, mute
+  - Posts addcase_reply
+
+- `!editcase <case_id> reason <new_reason>` or `!editcase <case_id> duration <new_duration>`
+  - Updates the reason or duration on an existing case
+  - Posts editcase_reply
+
+- `!deletecase <case_id>`
+  - Soft-deletes a case (marks it inactive, does not remove from DB)
+  - Posts deletecase_reply
+
+- `!reason <case_id> <new_reason>`
+  - Shortcut to update just the reason on a case
+
+- `!purge <count> [@user]`
+  - Deletes up to 100 messages in the current channel
+  - If `@user` given, deletes only that user's messages within the last 100 messages
+  - Posts purge_reply
+
+- `!slowmode <#channel> <duration_or_0>`
+  - Sets slowmode on the specified channel
+  - `!slowmode #general 5s` — 5 second slowmode
+  - `!slowmode #general 0` — removes slowmode
+  - Posts slowmode_reply
+
+**YAML Config for moderation plugin:**
+
+```yaml
+plugins:
+  moderation:
+    config:
+      mute_role: 123456789012345678          # Role ID to apply on mute
+      remove_roles_on_mute: true             # Remove all roles when muting (restored on unmute)
+      dm_on_action: true                     # DM the user on all actions
+      required_level: 50                     # Default level to use any moderation command
+      # Per-command level overrides:
+      levels:
+        ban: 60
+        forceban: 70
+        unban: 60
+        kick: 50
+        mute: 50
+        unmute: 50
+        warn: 25
+        addcase: 25
+        editcase: 50
+        deletecase: 75
+        purge: 25
+        slowmode: 50
+    messages:
+      ban_reply: "{user} has been banned | Case: {case}"
+      ban_dm: "You have been banned from {server} for the following reason: {reason} | Duration: {duration}"
+      # ... (all other message keys override defaults from message_formatter.py)
+```
+
+---
+
+### PLUGIN 2: `plugins/mass_actions.py`
+
+All mass moderation commands. Each action runs in a loop, creates individual cases for each user, and posts a single summary reply at the end.
+
+**Commands:**
+
+- `!masswarn @user1 @user2 ... [reason]` — warns multiple users at once
+- `!massmute @user1 @user2 ... [duration] [reason]` — mutes multiple users
+- `!masskick @user1 @user2 ... [reason]` — kicks multiple users
+- `!massban @user1 @user2 ... [duration] [reason]` — bans multiple users
+- `!massunban <id1> <id2> ... [reason]` — unbans multiple user IDs
+
+Each mass command:
+- Processes up to 20 users at once (configurable in YAML as `mass_limit`)
+- Posts a progress message, then edits it with results
+- Creates individual cases for each user
+- DMs each user (if dm_on_action enabled)
+- Posts one summary: `Mass {action} complete. Success: {n}, Failed: {n}`
+
+---
+
+### PLUGIN 3: `plugins/cases.py`
+
+**Commands:**
+
+- `!case <case_id>`
+  - Shows full detail of one case: case number, action, user, moderator, reason, duration, timestamp
+  - Uses plain text by default, embed if configured
+
+- `!cases @user`
+  - Shows all cases for a specific user in the current server
+  - Paginated: 5 cases per page using reaction navigation (◀ ▶)
+  - Shows: case number, action, reason, moderator, date
+
+- `!servercases`
+  - Shows the last 10 cases server-wide in reverse chronological order
+  - Paginated
+
+**YAML Config:**
+```yaml
+plugins:
+  cases:
+    config:
+      required_level: 25
+      cases_per_page: 5
+```
+
+---
+
+### PLUGIN 4: `plugins/levels.py`
+
+This plugin manages the level permission system. It does NOT award XP — levels here are staff permission tiers.
+
+**Commands:**
+
+- `!level [@user]` — shows your level or another user's level
+- `!levels` — lists all configured levels from YAML (users and roles with their level numbers)
+- `!levelset @user <number>` — bot owner only: dynamically adds/updates a user's level in the guild config YAML
+
+**YAML Config (in the root of guild config, not under plugins):**
+```yaml
+# Levels are at the root of the config, not inside plugins
+levels:
+  users:
+    "852608147554172928": 505    # sebastian id (505 treated as 100 max for permission checks, owner-tier)
+    "401063006034984960": 404    # valentin id
+    "906891936240128050": 100    # admin id
+    "907201886535417856": 70     # testing role id
+    "906900893738352650": 60     # developer role
+    "906891879394713612": 50     # role selfhost
+  roles:
+    "111111111111111111": 75     # Moderator role
+```
+
+Note: levels above 100 (like 404, 505) are treated as equivalent to 100 for permission checks unless the user is the bot owner (level 1000). They can be useful as identifiers.
+
+---
+
+### PLUGIN 5: `plugins/logging_plugin.py`
+
+Comprehensive event logging. Every event logs to configurable channels. All log message formats are customizable in YAML.
+
+**Events logged:**
+
+- Message edits (before/after content, channel, user, jump URL)
+- Message deletes (content if cached, channel, user)
+- Bulk message deletes (count, channel)
+- Member joins (username, ID, account age, avatar)
+- Member leaves (username, ID, roles they had)
+- Member bans (user, moderator if detectable)
+- Member unbans
+- Role created / deleted / updated (name, permissions changed)
+- Channel created / deleted / updated
+- Voice channel joins / leaves / moves
+- Nickname changes
+- Role assignment / removal from members
+- Guild boost / unboost
+- Invite created / deleted
+- Thread created / deleted
+- All moderation actions (ban, kick, mute, warn, etc. — posted to mod log channel)
+
+**YAML Config:**
+```yaml
+plugins:
+  logging:
+    enabled: true
+    # Each event has its own channel setting. null = don't log this event.
+    channels:
+      message_edit: 123456789012345678
+      message_delete: 123456789012345678
+      message_bulk_delete: 123456789012345678
+      member_join: 123456789012345678
+      member_leave: 123456789012345678
+      member_ban: 123456789012345678
+      member_unban: 123456789012345678
+      role_create: 123456789012345678
+      role_delete: 123456789012345678
+      role_update: 123456789012345678
+      channel_create: 123456789012345678
+      channel_delete: 123456789012345678
+      channel_update: 123456789012345678
+      voice_update: 123456789012345678
+      nickname_change: 123456789012345678
+      role_given: 123456789012345678
+      role_removed: 123456789012345678
+      mod_log: 123456789012345678          # All moderation actions go here too
+    # Optional: ignore logging for certain channels or roles
+    ignore_channels: []
+    ignore_roles: []
+    # Format of each log. Supports plain text or embed blocks (same format as other messages)
+    messages:
+      message_edit: "{user} edited a message in {channel}: **Before:** {before} | **After:** {after}"
+      message_delete: "{user}'s message was deleted in {channel}: {content}"
+      member_join: "{user} joined the server. Account created: {account_age}"
+      member_leave: "{user} left the server. Had roles: {roles}"
+      # ... all other log message formats
+```
+
+---
+
+### PLUGIN 6: `plugins/automod.py`
+
+Automatic moderation rules. Each rule is toggled and configured independently in YAML. When a rule triggers, it can delete the message, warn the user, mute the user, kick the user, or ban the user — configurable per rule.
+
+**Rules:**
+
+1. **spam** — detects X messages within Y seconds from one user
+2. **bad_words** — detects words from a configurable blacklist (supports wildcards like `*fuck*`)
+3. **invite_links** — detects Discord invite links (`discord.gg/...`)
+4. **mass_mentions** — detects messages mentioning more than X users/roles
+5. **caps_spam** — detects messages that are more than X% uppercase (min length threshold)
+6. **link_spam** — detects messages with more than X URLs
+7. **repeated_text** — detects the same message sent X times in Y seconds by the same user
+8. **mass_emojis** — detects messages with more than X emojis
+9. **zalgo** — detects zalgo/corrupted text using Unicode combining character detection
+10. **newline_spam** — detects messages with more than X newlines
+11. **new_account_gate** — flags or actions users whose Discord account is younger than X days
+12. **attachment_spam** — detects sending X+ attachments in Y seconds
+13. **mention_everyone_attempt** — detects attempts to @everyone even without permission
+
+**Actions per rule (configurable):**
+- `delete: true` — delete the triggering message
+- `warn: true` — issue a warn case
+- `mute: "10m"` — mute for duration
+- `kick: true` — kick from server
+- `ban: "7d"` — ban for duration
+- `log_channel: CHANNEL_ID` — log the trigger to a channel
+- `dm_user: true` — DM the user with the configured automod message
+- `reply: true` — post a message in channel
+
+**YAML Config:**
+```yaml
+plugins:
+  automod:
+    enabled: true
+    # Global exemptions
+    ignore_roles: []           # These roles are never affected by automod
+    ignore_channels: []        # These channels are never affected by automod
+
+    rules:
+      spam:
+        enabled: true
+        max_messages: 5            # X messages...
+        per_seconds: 4             # ...within Y seconds
+        action:
+          delete: true
+          mute: "5m"
+          dm_user: true
+          log_channel: 123456789
+        message: "Please stop spamming."
+
+      bad_words:
+        enabled: true
+        words:
+          - "*fuck*"
+          - "*shit*"
+          - "badword"
+        action:
+          delete: true
+          warn: true
+          dm_user: true
+          log_channel: 123456789
+        message: "Your message was removed for containing a prohibited word."
+
+      invite_links:
+        enabled: true
+        allow_own_server: true     # Allow invites to this server itself
+        action:
+          delete: true
+          warn: true
+        message: "Advertising other servers is not allowed."
+
+      mass_mentions:
+        enabled: true
+        max_mentions: 5
+        action:
+          delete: true
+          mute: "10m"
+        message: "Please do not mass mention users."
+
+      caps_spam:
+        enabled: true
+        min_length: 10             # Ignore messages shorter than this
+        max_caps_percent: 70       # If more than 70% uppercase
+        action:
+          delete: true
+        message: "Please avoid excessive caps."
+
+      link_spam:
+        enabled: true
+        max_links: 3
+        action:
+          delete: true
+          warn: true
+
+      repeated_text:
+        enabled: true
+        max_repeats: 3
+        per_seconds: 10
+        action:
+          delete: true
+          mute: "5m"
+
+      mass_emojis:
+        enabled: true
+        max_emojis: 10
+        action:
+          delete: true
+
+      zalgo:
+        enabled: true
+        action:
+          delete: true
+
+      newline_spam:
+        enabled: true
+        max_newlines: 8
+        action:
+          delete: true
+
+      new_account_gate:
+        enabled: false
+        min_age_days: 7
+        action:
+          kick: true
+          log_channel: 123456789
+        message: "Your account is too new to join this server."
+
+      attachment_spam:
+        enabled: false
+        max_attachments: 3
+        per_seconds: 5
+        action:
+          delete: true
+          warn: true
+
+      mention_everyone_attempt:
+        enabled: true
+        action:
+          delete: true
+          warn: true
+          log_channel: 123456789
+```
+
+---
+
+### PLUGIN 7: `plugins/escalation.py`
+
+Escalating punishments that automatically apply harsher punishments as infraction count increases.
+
+Two systems:
+
+**A) Manual Escalation** — triggered whenever a moderator manually issues a warn, mute, or kick:
+- Bot checks the user's total case count (across warn/mute/kick) in this server
+- If the count meets a threshold, automatically applies the escalation action on top of the manual action
+
+**B) Automod Escalation** — triggered whenever automod fires on a user:
+- Bot checks the user's total automod hit count (stored separately per rule)
+- Applies escalation when thresholds are met
+
+**YAML Config:**
+```yaml
+plugins:
+  escalation:
+    enabled: true
+
+    manual:
+      enabled: true
+      # After N total infractions (warn + mute + kick combined), apply escalation
+      thresholds:
+        - count: 3
+          action: mute
+          duration: "1h"
+          reason: "Automatic escalation: 3 infractions"
+        - count: 5
+          action: mute
+          duration: "24h"
+          reason: "Automatic escalation: 5 infractions"
+        - count: 7
+          action: kick
+          reason: "Automatic escalation: 7 infractions"
+        - count: 10
+          action: ban
+          duration: "7d"
+          reason: "Automatic escalation: 10 infractions"
+
+    automod:
+      enabled: true
+      # Per-rule escalation counts
+      spam:
+        thresholds:
+          - count: 3
+            action: mute
+            duration: "30m"
+          - count: 5
+            action: mute
+            duration: "2h"
+          - count: 8
+            action: ban
+            duration: "1d"
+      bad_words:
+        thresholds:
+          - count: 2
+            action: warn
+          - count: 4
+            action: mute
+            duration: "1h"
+          - count: 6
+            action: ban
+            duration: "7d"
+```
+
+---
+
+### PLUGIN 8: `plugins/command_aliases.py`
+
+Allows admins to define short aliases for any bot command in YAML. The plugin hooks into `bot.on_message` before command dispatch and rewrites the message content if an alias matches.
+
+**YAML Config:**
+```yaml
+plugins:
+  command_aliases:
+    config:
+      aliases:
+        "b": "ban"
+        "fb": "forceban"
+        "ub": "unban"
+        "k": "kick"
+        "m": "mute"
+        "um": "unmute"
+        "w": "warn"
+        "p": "purge"
+        "sm": "slowmode"
+        "ac": "addcase"
+        "ec": "editcase"
+        "dc": "deletecase"
+        "sc": "servercases"
+        "mw": "masswarn"
+        "mm": "massmute"
+        "mk": "masskick"
+        "mb": "massban"
+        "mub": "massunban"
+        "r": "reason"
+        "c": "cases"
+        "n": "note"
+        "h": "history"
+```
+
+When a message starts with prefix + alias key, it is rewritten to prefix + full command before processing. Example: `!b @user Spamming` becomes `!ban @user Spamming`.
+
+---
+
+### PLUGIN 9: `plugins/preset_reasons.py`
+
+Allows moderators to use short preset codes as reasons. When a moderation command is used with a preset code as the reason, the bot substitutes the full preset reason text.
+
+**YAML Config:**
+```yaml
+plugins:
+  preset_reasons:
+    config:
+      presets:
+        "spam": "Spamming in chat"
+        "ads": "Advertising without permission"
+        "toxic": "Toxic behavior towards members"
+        "nsfw": "Posting NSFW content outside designated channels"
+        "raid": "Raiding the server"
+        "slurs": "Using slurs or hate speech"
+        "threats": "Threatening other members"
+        "dox": "Doxxing or sharing personal information"
+        "impersonation": "Impersonating staff or other members"
+        "evade": "Ban or mute evasion"
+        "caps": "Excessive caps spam"
+        "links": "Posting unapproved links"
+        "tos": "Violating Discord Terms of Service"
+```
+
+Usage: `!warn @user spam` → reason stored as `"Spamming in chat"`.
+
+Preset lookup is applied in `moderation.py` before creating the case. Preset codes are case-insensitive. If the reason text doesn't match any preset, the literal reason text is used as-is.
+
+---
+
+### PLUGIN 10: `plugins/utility.py`
+
+Public and staff utility commands. Most are public (level 0). Some require a minimum level configured in YAML.
+
+**Commands:**
+
+User/Member info:
+- `!userinfo [@user]` — shows: username, ID, account creation date, server join date, roles, current level, highest role color, avatar thumbnail, status
+- `!avatar [@user]` — shows full-size avatar with a link to download the original
+- `!banner [@user]` — shows user's Discord profile banner (if set)
+- `!roles [@user]` — lists all roles a user has, sorted by hierarchy
+- `!joined [@user]` — shows when the user joined the server and their join position (e.g. "9th member to join")
+- `!firstmsg @user #channel` — links to the user's first message in a channel (searches backwards through history)
+
+Ban/Mod lookup:
+- `!bansearch <user_id>` — checks if a user ID is banned in this server and shows the ban reason
+- `!casecount @user` — shows total infraction count broken down by type (warns: 3, mutes: 2, kicks: 1, bans: 0)
+- `!lookup <user_id>` — fetches a Discord user by ID (even if not in server) and shows their profile info
+
+Server info:
+- `!serverinfo` — shows: server name, ID, owner, member count, channel counts, role count, boost level, creation date, icon
+- `!botinfo` — shows: bot name, version, uptime, ping, guild count, Python version, discord.py version, commands count
+- `!channelinfo [#channel]` — shows: name, ID, type, topic, slowmode, creation date, category, position
+- `!roleinfo @role` — shows: role name, ID, color, hoist, mentionable, member count, permissions summary, creation date
+- `!inviteinfo <invite_code>` — shows info about a Discord invite (server, channel, inviter, uses, expiry)
+- `!emojiinfo :emoji:` — shows emoji name, ID, creation date, animated or not, server origin
+
+Search/Misc:
+- `!permissions [@user] [#channel]` — shows a user's effective permissions in a channel or server
+- `!timestamp <time_string>` — converts a time string to a Discord timestamp format (`<t:UNIX:R>` etc.)
+- `!charinfo <character>` — shows Unicode info about a character (code point, name, category)
+
+Help:
+- `!help` — shows all currently enabled commands grouped by plugin. A command only appears in help if its plugin is enabled in the guild's YAML config. If a plugin is disabled (removed from config), its commands disappear from `!help` automatically.
+- `!help <command>` — shows detailed info for one command: usage, description, required level, aliases, examples
+
+**YAML Config:**
+```yaml
+plugins:
+  utility:
+    enabled: true
+    config:
+      levels:
+        userinfo: 0
+        avatar: 0
+        banner: 0
+        roles: 0
+        joined: 0
+        firstmsg: 25
+        bansearch: 25
+        casecount: 25
+        lookup: 25
+        serverinfo: 0
+        botinfo: 0
+        channelinfo: 0
+        roleinfo: 0
+        inviteinfo: 0
+        emojiinfo: 0
+        permissions: 25
+        timestamp: 0
+        charinfo: 0
+        help: 0
+```
+
+---
+
+### PLUGIN 11: `plugins/welcome.py`
+
+Welcome and farewell messages, and a member screening/gate system.
+
+**Commands:** None — all behavior is automatic.
+
+**YAML Config:**
+```yaml
+plugins:
+  welcome:
+    enabled: true
+
+    welcome:
+      enabled: true
+      channel: 123456789012345678
+      ping: false                       # Ping the user in the message
+      delete_after: null                # Delete welcome message after N seconds (null = never)
+      message: "Welcome to {server}, {user}! You are member #{member_count}."
+      # OR embed:
+      # message:
+      #   embed:
+      #     title: "Welcome!"
+      #     description: "Welcome to {server}, {user}!"
+      #     color: 0x2C2F3D
+      #     thumbnail: "{avatar}"
+
+    farewell:
+      enabled: true
+      channel: 123456789012345678
+      message: "{user} has left the server. We now have {member_count} members."
+
+    # Auto-assign a role when a user joins
+    join_role:
+      enabled: false
+      role: 123456789012345678
+      delay: 0                         # Seconds to wait before assigning (0 = immediate)
+
+    # Screening gate: only send welcome message after member passes membership screening
+    wait_for_verification: false       # If true, waits for on_member_update with pending=False
+```
+
+---
+
+### PLUGIN 12: `plugins/notes.py`
+
+Silent staff notes attached to users. Notes are stored as cases with `action = "note"`. Users are never notified about notes.
+
+**Commands:**
+
+- `!note @user <text>` — creates a note case, no DM, posts note_reply
+- `!viewnote <case_id>` — shows a single note by case ID (only works on note-type cases)
+- `!viewnotes @user` — shows all notes for a user, paginated
+- `!deletenote <case_id>` — deletes a note (soft-delete)
+- `!notesearch @user <search_term>` — searches note text for a user
+
+**YAML Config:**
+```yaml
+plugins:
+  notes:
+    enabled: true
+    config:
+      levels:
+        note: 25
+        viewnote: 25
+        viewnotes: 25
+        deletenote: 50
+        notesearch: 25
+```
+
+---
+
+### PLUGIN 13: `plugins/roles.py`
+
+Role management commands.
+
+**Commands:**
+
+- `!addrole @user @role [reason]` — adds a role to a user, logs the action
+- `!removerole @user @role [reason]` — removes a role from a user, logs the action
+- `!temprole @user @role <duration> [reason]` — adds a role temporarily, removes it when duration expires. Stores expiry in DB. Max 180 days.
+
+**YAML Config:**
+```yaml
+plugins:
+  roles:
+    enabled: true
+    config:
+      levels:
+        addrole: 50
+        removerole: 50
+        temprole: 50
+```
+
+---
+
+### PLUGIN 14: `plugins/starboard.py`
+
+Pins highly-reacted messages to a starboard channel.
+
+**Behavior:**
+- When a message reaches X star (⭐) reactions, it is posted to the starboard channel
+- If the star count falls below the threshold, the starboard message is removed
+- Starboard entries are tracked in the `starboard_entries` table
+- The same message is never reposted — if it already has a starboard entry, its reaction count is updated on the existing starboard message
+
+**YAML Config:**
+```yaml
+plugins:
+  starboard:
+    enabled: true
+    config:
+      channel: 123456789012345678       # The starboard output channel
+      threshold: 3                       # Stars required to appear on starboard
+      emoji: "⭐"                        # The emoji to count (can be custom emoji ID)
+      self_star: false                   # Allow authors to star their own messages
+      ignore_channels: []               # Never starboard messages from these channels
+      starboard_message: "⭐ {count} | {channel}"   # The text above the embed
+```
+
+---
+
+### PLUGIN 15: `plugins/timezones.py`
+
+User timezone tracking.
+
+**Commands:**
+
+- `!timezone set <timezone>` — sets your timezone (validates against `pytz` list). Example: `!timezone set America/New_York`
+- `!timezone get [@user]` — shows your or another user's set timezone and their current local time
+- `!timezone list` — lists all timezones set by server members, paginated 10 per page
+- `!timezone convert <time> from <timezone> to <timezone>` — converts a time between timezones
+
+**YAML Config:**
+```yaml
+plugins:
+  timezones:
+    enabled: true
+    config:
+      required_level: 0
+```
+
+---
+
+### PLUGIN 16: `plugins/reaction_roles.py`
+
+Three types of reaction roles, all configured in YAML. The bot sends setup messages or attaches to existing messages based on config.
+
+**Types:**
+
+**A) Emoji reaction roles** — user reacts with an emoji to get a role, removes reaction to remove role
+**B) Button roles** — bot sends a message with clickable buttons, each button toggles a role
+**C) Dropdown roles** — bot sends a message with a select menu, user picks roles from a list
+
+**YAML Config:**
+```yaml
+plugins:
+  reaction_roles:
+    enabled: true
+    groups:
+      # Group 1: Emoji reactions on an existing message
+      - type: emoji
+        message_id: 123456789012345678
+        channel_id: 123456789012345678
+        roles:
+          "🎮": 111111111111111111
+          "🎵": 222222222222222222
+          "📚": 333333333333333333
+
+      # Group 2: Button roles (bot sends this message)
+      - type: button
+        channel_id: 123456789012345678
+        message: "Click a button to get a role!"
+        roles:
+          - label: "Gamer"
+            role: 111111111111111111
+            style: primary          # primary | secondary | success | danger
+            emoji: "🎮"
+          - label: "Music Lover"
+            role: 222222222222222222
+            style: secondary
+            emoji: "🎵"
+
+      # Group 3: Dropdown select menu
+      - type: dropdown
+        channel_id: 123456789012345678
+        placeholder: "Select your roles..."
+        min_values: 0
+        max_values: 3
+        roles:
+          - label: "Gamer"
+            description: "For gaming discussion"
+            role: 111111111111111111
+            emoji: "🎮"
+          - label: "Music Lover"
+            description: "For music discussion"
+            role: 222222222222222222
+            emoji: "🎵"
+```
+
+On bot startup, reaction_roles plugin reads all groups from all guild configs and sends any setup messages that haven't been sent yet (tracked via `reaction_roles` table).
+
+---
+
+### PLUGIN 17: `plugins/tickets.py`
+
+Full ticket system with buttons and dropdowns.
+
+**Behavior:**
+
+- Bot sends a ticket creation panel (button or dropdown) to a configured channel
+- When a user clicks, a private ticket channel is created for them
+- Ticket channel is named `ticket-0001`, `ticket-0002`, etc.
+- Only the user and configured staff roles can see the channel
+- Ticket has built-in buttons: Close, Claim, Delete (staff only buttons posted in the channel)
+
+**Commands:**
+
+- `!ticket panel` — sends the ticket creation panel message to the configured channel (staff only)
+- `!ticket add @user` — adds a user to a ticket channel (must be run inside a ticket channel)
+- `!ticket remove @user` — removes a user from a ticket channel
+- `!ticket close [reason]` — closes the ticket (removes user access, posts close message, changes channel name to `closed-XXXX`)
+- `!ticket claim` — claims the ticket (assigns to moderator, posts claimed message)
+- `!ticket delete` — permanently deletes the ticket channel (also removes from DB)
+- `!blacklist @user [reason]` — prevents a user from opening tickets (staff only)
+- `!unblacklist @user` — removes ticket blacklist for a user
+
+**YAML Config:**
+```yaml
+plugins:
+  tickets:
+    enabled: true
+    config:
+      panel_channel: 123456789012345678      # Channel where the ticket panel is sent
+      category: 123456789012345678           # Category to create ticket channels in
+      staff_roles: [123456789012345678]      # Roles that can see all tickets
+      log_channel: 123456789012345678        # Log ticket open/close/delete here
+      max_open_per_user: 1                   # Max open tickets per user
+      levels:
+        manage: 50                           # Level required to use staff ticket commands
+
+      # Panel style
+      panel:
+        type: button                         # button | dropdown
+        message: "Open a support ticket by clicking below."
+        button_label: "Open Ticket"
+        button_emoji: "🎫"
+        button_style: primary
+
+        # For dropdown type:
+        # type: dropdown
+        # placeholder: "Select ticket type..."
+        # options:
+        #   - label: "Support"
+        #     description: "General support"
+        #     value: "support"
+        #   - label: "Report"
+        #     description: "Report a user"
+        #     value: "report"
+
+      messages:
+        ticket_created: "Your ticket has been created: {channel}"
+        ticket_closed: "Ticket closed by {mod}. Reason: {reason}"
+        ticket_claimed: "This ticket has been claimed by {mod}"
+        blacklisted: "You are blacklisted from opening tickets."
+```
+
+---
+
+### PLUGIN 18: `plugins/autoreply.py`
+
+Automatic reply and reaction system. Rules are stored in the `auto_replies` and `auto_reactions` tables and managed via commands.
+
+**Auto Reply Commands:**
+
+- `!autoreply add <trigger_type> <trigger> | <response>` — adds an auto-reply rule
+  - Trigger types: `contains`, `exact`, `startswith`, `endswith`, `regex`
+  - Example: `!autoreply add contains hello | Hello there!`
+- `!autoreply list` — lists all auto-reply rules (paginated)
+- `!autoreply delete <id>` — deletes a rule by ID
+- `!autoreply test <message>` — shows which auto-reply rules would fire for a given message
+
+**Auto Reaction Commands:**
+
+- `!autoreaction add <trigger> | <emoji1> [emoji2...]` — adds an auto-reaction rule
+- `!autoreaction list` — lists all auto-reaction rules
+- `!autoreaction delete <id>` — deletes a rule
+
+**Behavior:**
+- `reply_type: message` = bot posts a message in the channel
+- `reply_type: reply` = bot replies to the triggering message
+- `reply_type: dm` = bot DMs the triggering user
+- `delete_trigger: true` = original message is deleted before the reply is sent
+- `delete_after: 10` = bot's reply is deleted after 10 seconds
+
+**YAML Config:**
+```yaml
+plugins:
+  autoreply:
+    enabled: true
+    config:
+      required_level: 50    # Level to manage auto-reply rules via commands
+```
+
+---
+
+### PLUGIN 19: `plugins/auto_channel_clean.py`
+
+Automatically deletes messages in configured channels on a schedule.
+
+**Behavior:**
+- A background task runs every 60 seconds
+- For each channel in the schedule, if `interval_seconds` has passed since `last_cleaned`, it bulk-deletes messages in the channel (up to 100 at a time, respecting Discord's 14-day bulk delete limit)
+- After cleaning, updates `last_cleaned` timestamp
+
+**YAML Config:**
+```yaml
+plugins:
+  auto_channel_clean:
+    enabled: true
+    channels:
+      - channel: 123456789012345678
+        interval_seconds: 3600        # Clean every 1 hour
+        delete_older_than: null       # null = delete everything; or seconds (e.g. 86400 = messages older than 1 day)
+        keep_pinned: true             # Never delete pinned messages
+      - channel: 987654321098765432
+        interval_seconds: 86400       # Clean every 24 hours
+        delete_older_than: 604800     # Only delete messages older than 7 days
+        keep_pinned: true
+```
+
+---
+
+### PLUGIN 20: `plugins/slowmode_auto.py`
+
+Automatically applies slowmode when message rate in a channel exceeds a threshold, and removes it when activity drops.
+
+**YAML Config:**
+```yaml
+plugins:
+  slowmode_auto:
+    enabled: true
+    ignore_channels: []
+    ignore_roles: []
+    rules:
+      - channel: null                  # null = applies to all channels
+        messages_per_seconds: 10       # If 10 messages in 5 seconds...
+        window_seconds: 5
+        apply_slowmode: 3              # ...apply 3-second slowmode
+        remove_after_seconds: 30       # Remove slowmode after 30 seconds of lower activity
+      - channel: 123456789012345678    # Override for a specific channel
+        messages_per_seconds: 5
+        window_seconds: 3
+        apply_slowmode: 5
+        remove_after_seconds: 60
+```
+
+---
+
+### PLUGIN 21: `plugins/lockdown.py`
+
+Channel and server lockdown.
+
+**Commands:**
+
+- `!lockdown [#channel] [reason]` — removes `Send Messages` permission for @everyone in the specified channel. If no channel given, uses current channel.
+- `!lockdown -server [reason]` — locks all channels in the guild simultaneously (or only the channels listed under `lockdown_channels` in YAML config)
+- `!unlock [#channel] [reason]` — restores `Send Messages` for @everyone in the channel (restores to whatever it was before lockdown, stored in DB)
+- `!unlock -server [reason]` — unlocks all locked channels
+
+**YAML Config:**
+```yaml
+plugins:
+  lockdown:
+    enabled: true
+    config:
+      levels:
+        lockdown: 60
+        unlock: 60
+      lockdown_channels:               # For -server flag: only lock these channels
+        - 123456789012345678           # If empty, all text channels are locked
+        - 234567890123456789
+      log_channel: 123456789012345678
+      messages:
+        locked: "🔒 This channel has been locked. Reason: {reason}"
+        unlocked: "🔓 This channel has been unlocked."
+```
+
+---
+
+### PLUGIN 22: `plugins/modnick.py`
+
+Automatically handles problematic nicknames.
+
+**Behavior:**
+- On `on_member_join` and `on_member_update`, check the user's display name
+- If the name matches any configured bad pattern (hoist character, invisible chars, etc.), rename them
+
+**YAML Config:**
+```yaml
+plugins:
+  modnick:
+    enabled: true
+    config:
+      replacement_name: "Moderated Username"   # Name to assign when renaming
+      rename_on_join: true                      # Check names when members join
+      rename_on_update: true                    # Check names when nickname is changed
+      # Patterns that trigger renaming (all are checked):
+      block_hoisting: true                      # Names starting with !, @, #, $, etc.
+      block_invisible: true                     # Names with invisible/zero-width chars
+      block_too_short: true                     # Names under 2 visible characters
+      custom_patterns: []                       # Additional regex patterns to block
+      log_channel: 123456789012345678
+```
+
+---
+
+### PLUGIN 23: `plugins/history.py`
+
+Full user history timeline.
+
+**Commands:**
+
+- `!history @user` — shows a complete, chronological timeline of all actions on a user: cases (warn/mute/ban/kick), notes, escalations, automod hits, nickname changes (from logging), join/leave dates. Displayed paginated, 5 events per page.
+
+**YAML Config:**
+```yaml
+plugins:
+  history:
+    enabled: true
+    config:
+      required_level: 25
+```
+
+---
+
+### PLUGIN (BONUS): `plugins/reminders.py`
+
+**Commands:**
+
+- `!remind me <duration> <message>` — sets a reminder for yourself. Bot DMs you when the time comes.
+- `!remind list` — shows your pending reminders
+- `!remind cancel <id>` — cancels a reminder
+
+A background task checks the `reminders` table every 30 seconds for expired reminders and dispatches them.
+
+---
+
+## API SERVER (`api/server.py`)
+
+FastAPI app running inside the same process as the bot. Use `asyncio` + `uvicorn` to run both together in `main.py`.
+
+**CORS:** Only allow origins listed in `ALLOWED_ORIGINS` env var.
+
+**Auth:** Discord OAuth2. Session stored as a JWT cookie.
+
+**Endpoints:**
+
+```
+GET  /ping                          → {"status": "ok"}  (for UptimeRobot)
+
+GET  /api/auth/login                → Redirect to Discord OAuth2 authorization URL
+GET  /api/auth/callback             → Handle OAuth2 callback, issue JWT session cookie
+GET  /api/auth/logout               → Clear session cookie
+GET  /api/auth/me                   → Return current logged-in Discord user info
+
+GET  /api/guilds                    → List guilds the logged-in user shares with the bot
+GET  /api/guilds/{guild_id}/config  → Get raw YAML config text for a guild
+PUT  /api/guilds/{guild_id}/config  → Save new YAML config text (validates YAML first)
+GET  /api/guilds/{guild_id}/cases   → Get cases for a guild (paginated, filterable)
+GET  /api/guilds/{guild_id}/cases/{case_id} → Get one case by ID
+```
+
+The `PUT /api/guilds/{guild_id}/config` endpoint:
+1. Verifies the logged-in user is in the guild AND their level in the guild is ≥ 100 (admin-tier)
+2. Parses the YAML to validate it (returns 400 if invalid)
+3. Saves to `guild_configs` table
+4. Returns `{"success": true}`
+
+---
+
+## DASHBOARD (`dashboard/`)
+
+A standalone web app. No framework — pure HTML, CSS, vanilla JavaScript. Uses `fetch()` to call the API.
+
+### Pages:
+
+**`index.html` — Login page**
+- Shows the Nightpigeon logo (a pigeon flying against a night sky)
+- "Login with Discord" button → hits `/api/auth/login`
+- If already logged in (JWT cookie exists and valid), redirect to `guilds.html`
+
+**`guilds.html` — Guild picker**
+- Lists all guilds the user shares with the bot (from `/api/guilds`)
+- Each guild shows icon, name, guild ID
+- Clicking a guild goes to `config.html?guild_id=XXX`
+- Layout mirrors Zeppelin's Guilds page
+
+**`config.html` — YAML config editor**
+- Shows guild name at the top
+- Large monospace code editor (use CodeMirror or a `<textarea>` with monospace font and tab support)
+- "Save" button — sends `PUT /api/guilds/{guild_id}/config`
+- "Validate" button — tries `yaml.parse` client-side (use `js-yaml` from CDN) before submitting
+- Shows save success/error inline
+- Also has a sidebar with navigation tabs: Config, Cases
+- Layout mirrors Zeppelin's dashboard config editor
+
+**`cases.html` — Cases viewer**
+- Table showing cases for the selected guild
+- Columns: Case #, Action, User, Moderator, Reason, Duration, Date
+- Filterable by: action type, user ID, date range
+- Paginated 25 per page
+
+---
+
+## VISUAL THEME — NIGHTPIGEON
+
+**The entire visual identity of the dashboard, config editor, and all web pages is built around the Nightpigeon theme: a pigeon flying through a dark night sky with stars and a moon.**
+
+Apply this theme EXACTLY as described below to all dashboard pages.
+
+### Color Palette:
+```css
+:root {
+  --bg-primary:    #1a1c2e;   /* Deep navy — main background, like the night sky */
+  --bg-secondary:  #22253a;   /* Slightly lighter navy — card/panel backgrounds */
+  --bg-tertiary:   #2c2f48;   /* Medium navy — input backgrounds, code editor */
+  --accent-light:  #b8c0e8;   /* Soft periwinkle — primary text, links */
+  --accent-blue:   #6d78c4;   /* Muted indigo — borders, secondary accents */
+  --accent-moon:   #e8e4d4;   /* Warm off-white — moon glow, headings, highlights */
+  --accent-star:   #f0ead8;   /* Pale cream — star dots, dividers */
+  --text-primary:  #d4d8f0;   /* Light lavender-white — body text */
+  --text-muted:    #7a80a8;   /* Muted blue-gray — labels, secondary info */
+  --success:       #6cbf8a;   /* Muted green */
+  --danger:        #c46d7a;   /* Muted red */
+  --warning:       #c4a46d;   /* Muted amber */
+  --border:        rgba(109, 120, 196, 0.25);  /* Subtle indigo border */
+}
+```
+
+### Typography:
+- **Headings:** `'Space Grotesk'` (from Google Fonts) — geometric, clean, modern. Used for page titles, guild names, section headers.
+- **Body:** `'Inter'` (from Google Fonts) — legible, neutral. Used for all body copy, labels, buttons.
+- **Code/YAML editor:** `'JetBrains Mono'` (from Google Fonts) — clear monospace for the config editor.
+
+### Background:
+The background of all pages is `--bg-primary` (#1a1c2e). Add a subtle star field effect to the background using CSS: scatter 30-50 tiny `box-shadow` dots in off-white/cream at various positions on a `::before` pseudo-element on `<body>`. These stars should be 1px or 2px. Add a very faint radial gradient glow in the top-right corner of the page (representing the moon glow): `radial-gradient(circle at 85% 15%, rgba(232, 228, 212, 0.08) 0%, transparent 50%)`.
+
+### Layout structure (mirrors Zeppelin):
+- **Top navbar**: Fixed, 60px tall, `--bg-secondary` background, subtle bottom border in `--border`. Contains: Nightpigeon logo (a small pigeon icon SVG inline) + site name "Nightpigeon" in `--accent-moon` color. Right side: logged-in user avatar + username.
+- **Guild list page**: Cards in a single-column list, each card `--bg-secondary` background, hover state brightens to `--bg-tertiary`, rounded corners (`border-radius: 8px`), subtle `--border` border.
+- **Config page**: Two-column layout. Left: 220px sidebar with navigation links (Config, Cases). Right: main content area. The YAML editor takes up the full right column height with a dark `--bg-tertiary` background.
+- **Buttons**: Rounded (`border-radius: 6px`). Primary buttons use `--accent-blue` background with `--accent-moon` text. Save button is `--success`. Danger button is `--danger`.
+- **All inputs and text areas**: `--bg-tertiary` background, `--border` border, `--text-primary` text, `--accent-blue` focus ring.
+
+### Logo / Pigeon icon:
+Create an inline SVG pigeon silhouette in the navbar. The pigeon should be a simple, clean line-art style bird in flight (wings spread, facing right), drawn with white/cream strokes (`--accent-moon` color), NO fill. Approximately 28×28px. Keep it minimal and elegant — consistent with the style shown in the uploaded reference image (dove flying at night, white line art on dark background).
+
+---
+
+## WIKIPEDIA-STYLE DOCUMENTATION PAGE
+
+Build `dashboard/docs.html` — a full documentation site for all 23 plugins, styled in the Nightpigeon theme.
+
+The documentation page must be extremely thorough. For every plugin, document:
+1. **Plugin name and description** — what it does in 2-3 sentences
+2. **Enabling it** — how to add it to the YAML plugins block
+3. **Full YAML config schema** — every single config key, its type, its default value, and a description of what it does (as inline YAML comments)
+4. **Every command** — name, usage syntax, aliases, required level, all arguments explained (required vs optional, format), what the bot does when the command is run, example usage
+5. **All message keys** — every customizable message key for that plugin with its default text and all available variables
+6. **Behavior notes** — any edge cases, interactions with other plugins, or important notes
+
+The documentation layout must mirror Zeppelin's documentation layout exactly:
+- Fixed left sidebar with anchor links to every plugin section
+- Main content scrolls independently
+- Plugin sections have clear `<h2>` headings
+- Code blocks for all YAML examples (styled with `--bg-tertiary` background and `--accent-blue` text for YAML syntax keywords)
+- Each command displayed in a monospace block like: `!ban @user [duration] [reason]`
+- Navigation sidebar has the same section groupings as Zeppelin's docs: General, Configuration, Plugins (alphabetical list)
+
+---
+
+## REQUIREMENTS.TXT
+
+```
+discord.py==2.3.2
+asyncpg==0.29.0
+PyYAML==6.0.1
+python-dotenv==1.0.0
+fastapi==0.111.0
+uvicorn==0.30.1
+python-jose[cryptography]==3.3.0
+httpx==0.27.0
+pytz==2024.1
+python-multipart==0.0.9
+```
+
+Note: Add `.python-version` file to the repo root containing just `3.12` on a single line. This pins Render to Python 3.12, which is required for `discord.py` compatibility.
+
+---
+
+## RENDER DEPLOYMENT GUIDE
+
+Create a file `RENDER_GUIDE.md` in the repo root with these exact instructions:
+
+### Service 1 — Bot + API (Web Service)
+- Type: Web Service
+- Runtime: Python
+- Build Command: `pip install -r requirements.txt`
+- Start Command: `python main.py`
+- Python version: set via `.python-version` file (3.12)
+- Health Check Path: `/ping`
+- Environment Variables: (all from .env.example)
+- Keep alive: Use UptimeRobot to ping `https://YOUR-SERVICE-URL/ping` every 5 minutes
+
+### Service 2 — Dashboard (Static Site)
+- Type: Static Site
+- Build Command: (leave empty — no build step needed)
+- Publish Directory: `dashboard`
+- Add rewrite rule: Source `/*` → Destination `/index.html` → Action: Rewrite
+
+### Discord Developer Portal Setup
+- OAuth2 redirect URL to add: `https://YOUR-DASHBOARD-URL/callback.html`
+
+---
+
+## FINAL NOTES FOR REPLIT AGENT
+
+1. Every command in every plugin MUST respect the level system. Use `require_level()` from `level_check.py` on every command.
+2. Every message the bot sends MUST go through `message_formatter.py`. Never `ctx.send()` a hardcoded string directly from a plugin file.
+3. The config is NEVER cached. Every command reads from the DB fresh. This is intentional so dashboard edits take effect immediately.
+4. Build the entire project in one go. Do not skip any plugin or feature.
+5. The bot prefix is configurable in YAML as `prefix: "*"` at the root of each guild's config. Default to `!` if not set.
+6. All paginated embeds/messages use ◀ ▶ emoji reactions for navigation.
+7. Duration cap is 180 days. Any duration over 180 days must be rejected with an error message.
+8. Mute restores roles on unmute. Store the removed roles in `muted_users.removed_roles` (BIGINT array).
+9. The bot handles `on_guild_join` — but does NOT leave. It simply sets up the database row for the guild if it doesn't exist yet.
+10. All DB operations use `asyncpg`. Never use `psycopg2` in the bot or API.
+11. The dashboard uses plain vanilla JavaScript only — no React, no Vue, no build step.
+12. The pigeon/night sky theme must be applied to EVERY page in the dashboard directory.

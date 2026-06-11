@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Config — Nightpigeon</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="night-bg"></div>
+<div class="stars"></div>
+
+<div class="app-container">
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">
+      <img src="/static/pigeon.jpeg" alt="Nightpigeon" />
+      <span>Nightpigeon</span>
+    </a>
+    <div class="navbar-links">
+      <a href="/">Home</a>
+      <a href="/guilds">Guilds</a>
+      <a href="/docs-page">Docs</a>
+    </div>
+    <div class="navbar-right">
+      <div class="user-badge"></div>
+      <a href="/guilds" class="btn btn-secondary">← Back</a>
+    </div>
+  </nav>
+
+  <div style="padding: 20px 28px;">
+    <div class="flash-container" id="flash"></div>
+    <div class="config-layout">
+      <!-- Sidebar -->
+      <div class="config-sidebar">
+        <h3>Guild</h3>
+        <div class="sidebar-item active" id="guild-name-item">
+          <span>Loading...</span>
+        </div>
+
+        <h3 style="margin-top:16px;">Quick Nav</h3>
+        <div class="sidebar-item" onclick="jumpToLine('prefix:')">⚙️ Prefix</div>
+        <div class="sidebar-item" onclick="jumpToLine('levels:')">🔑 Levels</div>
+        <div class="sidebar-item" onclick="jumpToLine('plugins:')">🧩 Plugins</div>
+        <div class="sidebar-item" onclick="jumpToSection('moderation:')">🛡️ Moderation</div>
+        <div class="sidebar-item" onclick="jumpToSection('automod:')">🤖 Automod</div>
+        <div class="sidebar-item" onclick="jumpToSection('logging:')">📋 Logging</div>
+        <div class="sidebar-item" onclick="jumpToSection('welcome:')">👋 Welcome</div>
+        <div class="sidebar-item" onclick="jumpToSection('tickets:')">🎫 Tickets</div>
+        <div class="sidebar-item" onclick="jumpToSection('starboard:')">⭐ Starboard</div>
+        <div class="sidebar-item" onclick="jumpToSection('timezones:')">🕐 Timezones</div>
+        <div class="sidebar-item" onclick="jumpToSection('reaction_roles:')">🎭 Reaction Roles</div>
+        <div class="sidebar-item" onclick="jumpToSection('reminders:')">⏰ Reminders</div>
+        <div class="sidebar-item" onclick="jumpToSection('escalation:')">📈 Escalation</div>
+        <div class="sidebar-item" onclick="jumpToSection('lockdown:')">🔒 Lockdown</div>
+
+        <h3 style="margin-top:16px;">Actions</h3>
+        <div class="sidebar-item" onclick="saveConfig()">💾 Save</div>
+        <div class="sidebar-item" onclick="resetConfig()">↩️ Reset</div>
+        <div class="sidebar-item" onclick="validateConfig()">✅ Validate</div>
+        <div class="sidebar-item" onclick="window.location.href='/cases?guild=' + guildId">📊 View Cases</div>
+        <div class="sidebar-item" onclick="window.location.href='/docs-page'">📖 Docs</div>
+      </div>
+
+      <!-- Editor -->
+      <div class="config-main">
+        <div class="config-header">
+          <div>
+            <h2 id="config-title">Config for <span id="guild-name">...</span></h2>
+            <p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px">
+              YAML config · changes are saved immediately
+            </p>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="validateConfig()">Validate</button>
+            <button class="btn btn-primary" onclick="saveConfig()" id="save-btn">
+              💾 Save
+            </button>
+          </div>
+        </div>
+
+        <div class="editor-wrap">
+          <div style="background:var(--bg-secondary); border-bottom:1px solid var(--border); padding:8px 16px; display:flex; align-items:center; justify-content:space-between; font-size:0.75rem; color:var(--text-muted);">
+            <span>config.yaml</span>
+            <span id="editor-status">Ready</span>
+          </div>
+          <textarea id="yaml-editor" spellcheck="false" autocomplete="off" placeholder="# Paste or type your YAML config here
+prefix: '!'
+
+levels:
+  users:
+    # your_user_id: 100
+  roles:
+    # your_role_id: 50
+
+plugins:
+  moderation:
+    enabled: true
+    config:
+      mute_role: null
+      dm_on_action: true
+"></textarea>
+        </div>
+
+        <div style="background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius); padding:12px 16px; font-size:0.8rem; color:var(--text-muted);">
+          <strong style="color:var(--text-secondary)">Keyboard shortcuts:</strong>
+          Ctrl+S to save · Tab inserts 2 spaces · Ctrl+Z to undo
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+const params = new URLSearchParams(window.location.search);
+const guildId = params.get('guild');
+let originalConfig = '';
+
+if (!guildId) {
+  window.location.href = '/guilds';
+}
+
+// Load config
+async function loadConfig() {
+  try {
+    const data = await apiFetch(`/api/guilds/${guildId}/config`);
+    const editor = document.getElementById('yaml-editor');
+    editor.value = data.config || '';
+    originalConfig = data.config || '';
+    setStatus('Loaded', 'success');
+  } catch (err) {
+    if (err.message !== 'Unauthorized') {
+      showFlash('Failed to load config: ' + err.message, 'error');
+    }
+  }
+}
+
+// Load guild name
+async function loadGuildInfo() {
+  try {
+    const guilds = await apiFetch('/api/guilds');
+    const guild = guilds?.find(g => g.id === guildId);
+    if (guild) {
+      document.getElementById('guild-name').textContent = guild.name;
+      document.getElementById('guild-name-item').innerHTML = `
+        <span>${guild.name}</span>
+      `;
+      document.title = `Config for ${guild.name} — Nightpigeon`;
+    }
+  } catch {}
+}
+
+async function saveConfig() {
+  const editor = document.getElementById('yaml-editor');
+  const btn = document.getElementById('save-btn');
+  const config = editor.value;
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  setStatus('Saving...', 'info');
+
+  try {
+    await apiFetch(`/api/guilds/${guildId}/config`, {
+      method: 'PUT',
+      body: JSON.stringify({ config }),
+    });
+    originalConfig = config;
+    showFlash('Config saved successfully!', 'success');
+    setStatus('Saved', 'success');
+  } catch (err) {
+    showFlash('Save failed: ' + err.message, 'error');
+    setStatus('Error', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '💾 Save';
+  }
+}
+
+async function validateConfig() {
+  const editor = document.getElementById('yaml-editor');
+  const config = editor.value;
+
+  try {
+    // Basic YAML validation via trying to parse it
+    setStatus('Validating...', 'info');
+    await apiFetch(`/api/guilds/${guildId}/config`, {
+      method: 'PUT',
+      body: JSON.stringify({ config }),
+    });
+    showFlash('Config is valid YAML!', 'success');
+    setStatus('Valid', 'success');
+  } catch (err) {
+    showFlash('Validation failed: ' + err.message, 'error');
+    setStatus('Invalid YAML', 'error');
+  }
+}
+
+function resetConfig() {
+  const editor = document.getElementById('yaml-editor');
+  editor.value = originalConfig;
+  showFlash('Config reset to last saved state.', 'info');
+  setStatus('Reset', 'info');
+}
+
+function jumpToLine(searchText) {
+  const editor = document.getElementById('yaml-editor');
+  const lines = editor.value.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes(searchText)) {
+      const pos = lines.slice(0, i).join('\n').length + (i > 0 ? 1 : 0);
+      editor.focus();
+      editor.setSelectionRange(pos, pos + lines[i].length);
+      editor.scrollTop = (editor.scrollHeight / lines.length) * i - 100;
+      return;
+    }
+  }
+}
+
+function jumpToSection(searchText) {
+  const editor = document.getElementById('yaml-editor');
+  const lines = editor.value.split('\n');
+  const indentedSearch = '    ' + searchText;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith(searchText.replace(':', ''))) {
+      const pos = lines.slice(0, i).join('\n').length + (i > 0 ? 1 : 0);
+      editor.focus();
+      editor.setSelectionRange(pos, pos + lines[i].length);
+      editor.scrollTop = (editor.scrollHeight / lines.length) * i - 100;
+      return;
+    }
+  }
+  showFlash(`Section "${searchText}" not found. You may need to add it.`, 'info');
+}
+
+function setStatus(text, type) {
+  const el = document.getElementById('editor-status');
+  const colors = { success: 'var(--success)', error: 'var(--danger)', info: 'var(--accent)', default: 'var(--text-muted)' };
+  el.textContent = text;
+  el.style.color = colors[type] || colors.default;
+}
+
+function showFlash(message, type) {
+  const container = document.getElementById('flash');
+  container.innerHTML = `<div class="alert alert-${type}" style="margin-bottom:12px">${message}</div>`;
+  setTimeout(() => { if (container.firstChild) container.firstChild.remove(); }, 4000);
+}
+
+// Tab key inserts 2 spaces
+document.getElementById('yaml-editor').addEventListener('keydown', e => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const el = e.target;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    el.value = el.value.substring(0, start) + '  ' + el.value.substring(end);
+    el.selectionStart = el.selectionEnd = start + 2;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveConfig();
+  }
+});
+
+// Mark unsaved changes
+document.getElementById('yaml-editor').addEventListener('input', () => {
+  const changed = document.getElementById('yaml-editor').value !== originalConfig;
+  setStatus(changed ? 'Unsaved changes' : 'Ready', changed ? 'warn' : 'default');
+});
+
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!guildId) return;
+  await Promise.all([loadConfig(), loadGuildInfo()]);
+});
+</script>
+</body>
+</html>

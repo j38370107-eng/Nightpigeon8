@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guilds — Nightpigeon</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="night-bg"></div>
+<div class="stars"></div>
+
+<div class="app-container">
+  <nav class="navbar">
+    <a href="/" class="navbar-brand">
+      <img src="/static/pigeon.jpeg" alt="Nightpigeon" />
+      <span>Nightpigeon</span>
+    </a>
+    <div class="navbar-links">
+      <a href="/">Home</a>
+      <a href="/guilds" class="active">Guilds</a>
+      <a href="/docs-page">Docs</a>
+    </div>
+    <div class="navbar-right">
+      <div class="user-badge"></div>
+      <a href="/api/auth/logout" class="btn btn-secondary">Log out</a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="flash-container"></div>
+    <h1 class="page-title">Guilds</h1>
+
+    <div id="guild-list" class="guild-grid">
+      <div style="grid-column:1/-1; text-align:center; padding:60px; color:var(--text-muted)">
+        <div class="loading-spinner" style="margin:0 auto 16px"></div>
+        <p>Loading your guilds...</p>
+      </div>
+    </div>
+
+    <div id="empty-state" class="empty-state" style="display:none">
+      <img src="/static/pigeon.jpeg" alt="No guilds" />
+      <p>Nightpigeon is not in any of your servers — or you don't have admin access.</p>
+      <br/>
+      <p style="font-size:0.8rem">Make sure you are in the guild and have Level 100+ permission.</p>
+    </div>
+  </main>
+
+  <footer>
+    <p>Nightpigeon · <a href="/" style="color:var(--accent);text-decoration:none">Home</a></p>
+  </footer>
+</div>
+
+<script src="/static/app.js"></script>
+<script>
+async function loadGuilds() {
+  try {
+    const guilds = await apiFetch('/api/guilds');
+    const list = document.getElementById('guild-list');
+    const empty = document.getElementById('empty-state');
+
+    if (!guilds || guilds.length === 0) {
+      list.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+
+    list.innerHTML = '';
+    guilds.forEach(guild => {
+      const icon = guild.icon
+        ? `<img src="${guild.icon}" alt="${guild.name}" />`
+        : `<span>${guild.name[0].toUpperCase()}</span>`;
+
+      list.innerHTML += `
+        <div class="guild-card" onclick="window.location.href='/config?guild=${guild.id}'">
+          <div class="guild-icon">${icon}</div>
+          <div class="guild-info">
+            <h3>${guild.name}</h3>
+            <small>${guild.member_count?.toLocaleString() || '?'} members</small>
+          </div>
+          <a href="/config?guild=${guild.id}" class="btn btn-primary">Config</a>
+        </div>
+      `;
+    });
+  } catch (err) {
+    if (err.message === 'Unauthorized') return;
+    const list = document.getElementById('guild-list');
+    list.innerHTML = `
+      <div style="grid-column:1/-1">
+        <div class="alert alert-error">Failed to load guilds: ${err.message}</div>
+      </div>
+    `;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadGuilds);
+</script>
+</body>
+</html>

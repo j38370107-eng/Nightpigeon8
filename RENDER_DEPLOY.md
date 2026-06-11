@@ -95,17 +95,40 @@ IMPORTANT: Make sure the URL ends with ?sslmode=require — Aiven requires SSL.
 
 ---
 
+## Step 6 — UptimeRobot (Keep the bot always online)
+
+Both services have a /ping endpoint that returns {"status":"ok"}.
+Use UptimeRobot to ping them every 5 minutes so Render never puts them to sleep.
+
+1. Go to https://uptimerobot.com and create a free account
+2. Click New Monitor for the Bot + API service:
+   - Monitor Type:   HTTP(s)
+   - Friendly Name:  Nightpigeon Bot
+   - URL:            https://nightpigeon-bot-api.onrender.com/ping
+   - Interval:       Every 5 minutes
+   - Click Save
+3. Click New Monitor again for the Dashboard:
+   - Monitor Type:   HTTP(s)
+   - Friendly Name:  Nightpigeon Dashboard
+   - URL:            https://nightpigeon-dashboard.onrender.com/ping
+   - Interval:       Every 5 minutes
+   - Click Save
+
+That's it — UptimeRobot will ping both services every 5 minutes, keeping them awake 24/7.
+
+---
+
 ## Final URLs
 
-- Dashboard:  https://nightpigeon-dashboard.onrender.com
-- API / Bot:  https://nightpigeon-bot-api.onrender.com
-- Health check: https://nightpigeon-bot-api.onrender.com/api/healthz
+- Dashboard:   https://nightpigeon-dashboard.onrender.com
+- API / Bot:   https://nightpigeon-bot-api.onrender.com
+- Bot ping:    https://nightpigeon-bot-api.onrender.com/ping
+- Dash ping:   https://nightpigeon-dashboard.onrender.com/ping
 
 ---
 
 ## Notes
 
-- Free Render services sleep after 15 min of inactivity and take ~30 sec to wake up.
-  Upgrade to Starter ($7/mo) if you need the bot always online.
-- After any code changes, push to GitHub and Render will auto-redeploy.
+- After any code changes, push to GitHub — Render will auto-redeploy both services.
 - The REDIRECT_URI in your Discord app settings and the REDIRECT_URI env var must match exactly.
+- If the bot disconnects, check the nightpigeon-bot-api logs in the Render dashboard.

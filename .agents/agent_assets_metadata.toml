@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "Nh5qRH9oJYR0-ruALHOqU"
+uri = "file://RENDER_DEPLOY.md"
+type = "text"
+title = "Render Deployment Guide"

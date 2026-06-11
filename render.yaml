@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: nightpigeon
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nightpigeon-db
+          property: connectionString
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: CLIENT_SECRET
+        sync: false
+      - key: API_SECRET_KEY
+        sync: false
+      - key: REDIRECT_URI
+        sync: false
+
+databases:
+  - name: nightpigeon-db
+    databaseName: nightpigeon
+    user: nightpigeon
+    region: oregon
+    plan: free

@@ -1,4 +1,4 @@
-modules = ["python-3.11", "nodejs-20"]
+modules = ["python-3.11", "nodejs-20", "web"]
 
 [deployment]
 router = "application"
@@ -50,7 +50,7 @@ externalPort = 80
 
 [nix]
 channel = "stable-25_05"
-packages = ["libyaml"]
+packages = ["libyaml", "postgresql"]
 
 [userenv]
 

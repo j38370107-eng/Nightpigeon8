@@ -1,4 +1,3 @@
-import os
 import discord
 import logging
 from functools import wraps
@@ -7,14 +6,9 @@ from bot.core.message_formatter import send_message
 
 log = logging.getLogger("bot.levels")
 
-BOT_OWNER_ID = int(os.environ.get("BOT_OWNER_ID", "0"))
-
 
 async def get_user_level(guild_id: int, user_id: int, member: discord.Member | None) -> int:
     """Returns the highest permission level for a user in a guild."""
-    if user_id == BOT_OWNER_ID and BOT_OWNER_ID != 0:
-        return 1000
-
     config = await get_config(guild_id)
     levels_config = config.get("levels", {})
 
@@ -29,7 +23,7 @@ async def get_user_level(guild_id: int, user_id: int, member: discord.Member | N
     if user_key in users:
         val = users[user_key]
         if isinstance(val, int):
-            highest = max(highest, min(val, 100) if val < 1000 else 100)
+            highest = max(highest, val)
 
     # Check role-level overrides
     if member:
@@ -39,7 +33,7 @@ async def get_user_level(guild_id: int, user_id: int, member: discord.Member | N
             if role_key in roles_config:
                 val = roles_config[role_key]
                 if isinstance(val, int):
-                    highest = max(highest, min(val, 100))
+                    highest = max(highest, val)
 
     return highest
 

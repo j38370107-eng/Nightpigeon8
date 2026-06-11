@@ -3,7 +3,7 @@ from discord.ext import commands
 import yaml
 import logging
 from bot.core.config_loader import get_config, get_config_text, save_config
-from bot.core.level_check import get_user_level, BOT_OWNER_ID
+from bot.core.level_check import get_user_level
 from bot.core.message_formatter import send_message
 
 log = logging.getLogger("bot.levels")
@@ -18,10 +18,7 @@ class LevelsCog(commands.Cog):
     async def level(self, ctx, user: discord.Member = None):
         target = user or ctx.author
         level = await get_user_level(ctx.guild.id, target.id, target)
-        if target.id == BOT_OWNER_ID and BOT_OWNER_ID != 0:
-            level_str = "1000 (Bot Owner)"
-        else:
-            level_str = str(level)
+        level_str = str(level)
         embed = discord.Embed(
             title=f"Level for {target}",
             description=f"**Level:** {level_str}",
@@ -65,11 +62,11 @@ class LevelsCog(commands.Cog):
     @commands.guild_only()
     async def levelset(self, ctx, user: discord.Member, level: int):
         invoker_level = await get_user_level(ctx.guild.id, ctx.author.id, ctx.author)
-        if invoker_level < 100 and ctx.author.id != BOT_OWNER_ID:
-            return await ctx.send("Only admins (level 100) can set levels.")
+        if invoker_level < 1:
+            return await ctx.send("You need at least level 1 to set levels.")
 
-        if level < 0 or level > 100:
-            return await ctx.send("Level must be between 0 and 100.")
+        if level < 0:
+            return await ctx.send("Level must be 0 or higher.")
 
         config_text = await get_config_text(ctx.guild.id)
         try:

@@ -36,23 +36,23 @@ def create_dashboard_app() -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(DASHBOARD_DIR)), name="static")
 
-    @app.get("/")
+    @app.api_route("/", methods=["GET", "HEAD"])
     async def root():
         return FileResponse(str(DASHBOARD_DIR / "index.html"))
 
-    @app.get("/guilds")
+    @app.api_route("/guilds", methods=["GET", "HEAD"])
     async def guilds_page():
         return FileResponse(str(DASHBOARD_DIR / "guilds.html"))
 
-    @app.get("/config")
+    @app.api_route("/config", methods=["GET", "HEAD"])
     async def config_page():
         return FileResponse(str(DASHBOARD_DIR / "config.html"))
 
-    @app.get("/cases")
+    @app.api_route("/cases", methods=["GET", "HEAD"])
     async def cases_page():
         return FileResponse(str(DASHBOARD_DIR / "cases.html"))
 
-    @app.get("/docs-page")
+    @app.api_route("/docs-page", methods=["GET", "HEAD"])
     async def docs_page():
         return FileResponse(str(DASHBOARD_DIR / "docs.html"))
 

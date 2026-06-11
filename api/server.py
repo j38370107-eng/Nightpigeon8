@@ -51,28 +51,28 @@ def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
         async def config_js():
             return Response(content="window.API_BASE = '';\n", media_type="application/javascript")
 
-        @app.get("/")
+        @app.api_route("/", methods=["GET", "HEAD"])
         async def root():
             return FileResponse(str(DASHBOARD_DIR / "index.html"))
 
-        @app.get("/guilds")
+        @app.api_route("/guilds", methods=["GET", "HEAD"])
         async def guilds_page():
             return FileResponse(str(DASHBOARD_DIR / "guilds.html"))
 
-        @app.get("/api/dashboard")
+        @app.api_route("/api/dashboard", methods=["GET", "HEAD"])
         async def dashboard_redirect():
             from fastapi.responses import RedirectResponse
             return RedirectResponse("/guilds")
 
-        @app.get("/config")
+        @app.api_route("/config", methods=["GET", "HEAD"])
         async def config_page():
             return FileResponse(str(DASHBOARD_DIR / "config.html"))
 
-        @app.get("/cases")
+        @app.api_route("/cases", methods=["GET", "HEAD"])
         async def cases_page():
             return FileResponse(str(DASHBOARD_DIR / "cases.html"))
 
-        @app.get("/docs-page")
+        @app.api_route("/docs-page", methods=["GET", "HEAD"])
         async def docs_page():
             return FileResponse(str(DASHBOARD_DIR / "docs.html"))
 

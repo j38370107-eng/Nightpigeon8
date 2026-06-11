@@ -237,7 +237,19 @@ async def callback(
     }
     token = create_jwt(session_data)
     log.info(f"Login success for {user_data['username']} ({user_data['id']})")
-    resp = RedirectResponse(guilds_page, status_code=302)
+
+    # Use a 200 HTML response with JS redirect instead of a 302 redirect.
+    # Render's (and some other) reverse proxies strip Set-Cookie headers from
+    # 3xx responses, so the browser never receives the session cookie.
+    # Returning a 200 with the cookie + a client-side redirect avoids this.
+    html = (
+        "<!doctype html><html><head>"
+        f'<meta http-equiv="refresh" content="0;url={guilds_page}">'
+        "</head><body>"
+        f'<script>window.location.replace({repr(guilds_page)});</script>'
+        "</body></html>"
+    )
+    resp = HTMLResponse(content=html, status_code=200)
     _set_session_cookie(resp, token)
     return resp
 

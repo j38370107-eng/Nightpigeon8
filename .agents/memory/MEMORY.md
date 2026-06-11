@@ -1,0 +1,1 @@
+- [Render OAuth cookie stripping](render-oauth-cookie.md) — Render's proxy strips Set-Cookie from 3xx responses; use 200 HTML+JS redirect in OAuth callbacks instead.

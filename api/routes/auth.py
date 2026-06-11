@@ -23,6 +23,7 @@ def _cfg():
         "client_secret": os.environ.get("CLIENT_SECRET", ""),
         "redirect_uri": os.environ.get("REDIRECT_URI", ""),
         "secret_key": os.environ.get("API_SECRET_KEY", "changeme-secret-key-123"),
+        "dashboard_url": os.environ.get("DASHBOARD_URL", "").rstrip("/"),
     }
 
 
@@ -48,6 +49,21 @@ def get_current_user(request: Request) -> dict | None:
     return decode_jwt(token)
 
 
+def _set_session_cookie(response: RedirectResponse, token: str):
+    """Set the session cookie. Uses SameSite=None+Secure for cross-domain (Render split),
+    falls back to Lax for same-domain (Replit unified)."""
+    dashboard_url = os.environ.get("DASHBOARD_URL", "")
+    cross_domain = bool(dashboard_url)
+    response.set_cookie(
+        "session",
+        token,
+        httponly=True,
+        samesite="none" if cross_domain else "lax",
+        secure=cross_domain,
+        max_age=SESSION_EXPIRE_HOURS * 3600,
+    )
+
+
 @router.get("/api/auth/login")
 async def login(request: Request):
     cfg = _cfg()
@@ -56,7 +72,7 @@ async def login(request: Request):
         return HTMLResponse(
             "<h2 style='font-family:sans-serif;color:#e74c3c'>⚠️ Discord OAuth not configured</h2>"
             "<p style='font-family:sans-serif'>The <b>CLIENT_ID</b> secret is not set. "
-            "Add it in the Replit Secrets panel and restart the app.</p>",
+            "Add it in your environment variables and restart the app.</p>",
             status_code=503,
         )
 
@@ -86,9 +102,13 @@ async def login(request: Request):
 @router.get("/api/auth/callback")
 async def callback(request: Request, response: Response, code: str = None, state: str = None, error: str = None):
     cfg = _cfg()
+    dashboard_url = cfg["dashboard_url"]
+
+    home = dashboard_url or "/"
+    guilds_page = f"{dashboard_url}/guilds" if dashboard_url else "/guilds"
 
     if error:
-        return RedirectResponse("/")
+        return RedirectResponse(home)
 
     if not code or not state:
         raise HTTPException(status_code=400, detail="Missing code or state")
@@ -140,14 +160,16 @@ async def callback(request: Request, response: Response, code: str = None, state
         "access_token": access_token,
     }
     token = create_jwt(session_data)
-    resp = RedirectResponse("/guilds")
-    resp.set_cookie("session", token, httponly=True, samesite="lax", max_age=SESSION_EXPIRE_HOURS * 3600)
+    resp = RedirectResponse(guilds_page)
+    _set_session_cookie(resp, token)
     return resp
 
 
 @router.get("/api/auth/logout")
-async def logout():
-    resp = RedirectResponse("/")
+async def logout(request: Request):
+    cfg = _cfg()
+    home = cfg["dashboard_url"] or "/"
+    resp = RedirectResponse(home)
     resp.delete_cookie("session")
     return resp
 

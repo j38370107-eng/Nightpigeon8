@@ -79,6 +79,9 @@ function _applyNavState(user) {
   const logoutBtn = document.getElementById('logout-btn');
   const userInfo  = document.getElementById('user-info');
 
+  if (loginBtn)  loginBtn.href  = API_BASE + '/api/auth/login';
+  if (logoutBtn) logoutBtn.href = API_BASE + '/api/auth/logout';
+
   if (user) {
     if (userInfo)  userInfo.style.display  = 'flex';
     if (logoutBtn) logoutBtn.style.display = 'inline-flex';
@@ -94,7 +97,7 @@ function _applyNavState(user) {
 async function requireAuth() {
   const user = await loadUser();
   if (!user) {
-    window.location.href = '/api/auth/login';
+    window.location.href = API_BASE + '/api/auth/login';
     throw new Error('Redirecting to login');
   }
   return user;

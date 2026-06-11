@@ -39,6 +39,7 @@ CLIENT_SECRET     = (your Discord app client secret)
 API_SECRET_KEY    = (any long random string, e.g. a strong password)
 REDIRECT_URI      = https://nightpigeon-bot-api.onrender.com/api/auth/callback
 ALLOWED_ORIGINS   = https://nightpigeon-dashboard.onrender.com
+DASHBOARD_URL     = https://nightpigeon-dashboard.onrender.com
 ```
 
 5. Click Deploy and wait for it to go live.
@@ -54,10 +55,11 @@ ALLOWED_ORIGINS   = https://nightpigeon-dashboard.onrender.com
    - Build Command:  pip install fastapi uvicorn
    - Start Command:  python dashboard_server.py
 
-3. Add this Environment Variable:
+3. Add these Environment Variables:
 
 ```
-API_URL = https://nightpigeon-bot-api.onrender.com
+API_URL      = https://nightpigeon-bot-api.onrender.com
+DASHBOARD_URL = https://nightpigeon-dashboard.onrender.com
 ```
 
 (Use the exact URL from Step 2)

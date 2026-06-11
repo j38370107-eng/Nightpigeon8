@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NightPigeon — Discord Moderation Bot</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --navy: #13192b;
+      --surface: #1a2040;
+      --border: #2a3556;
+      --text: #e8eaf6;
+      --text-dim: #8892b0;
+      --accent: #7986cb;
+      --accent-hover: #9fa8da;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .hero {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .hero-bg {
+      position: absolute;
+      inset: 0;
+      background-image: url('/api/nightsky.png');
+      background-size: cover;
+      background-position: center;
+      opacity: 0.45;
+      z-index: 0;
+    }
+    .hero-bg::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to bottom, transparent 40%, var(--bg) 100%);
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+      max-width: 600px;
+    }
+
+    .logo {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid rgba(121, 134, 203, 0.4);
+      box-shadow: 0 0 40px rgba(121, 134, 203, 0.15);
+    }
+
+    h1 {
+      font-size: 3.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+
+    .tagline {
+      font-size: 1.1rem;
+      color: var(--text-dim);
+      line-height: 1.6;
+      max-width: 440px;
+    }
+
+    .cta-row {
+      display: flex;
+      gap: 1rem;
+      margin-top: 0.5rem;
+    }
+
+    .btn {
+      padding: 0.65rem 1.75rem;
+      border-radius: 6px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border: 1px solid transparent;
+    }
+    .btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .btn-outline {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent-hover); transform: translateY(-1px); }
+
+    .footer-links {
+      position: absolute;
+      bottom: 2rem;
+      z-index: 1;
+      display: flex;
+      gap: 2rem;
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+    .footer-links a { color: inherit; text-decoration: none; transition: color 0.15s; }
+    .footer-links a:hover { color: var(--text); }
+
+    .features {
+      background: var(--bg);
+      padding: 5rem 2rem;
+      display: flex;
+      justify-content: center;
+    }
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      max-width: 900px;
+      width: 100%;
+    }
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem;
+    }
+    .feature-icon { font-size: 1.5rem; margin-bottom: 0.75rem; }
+    .feature-card h3 { font-size: 1rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .feature-card p { font-size: 0.875rem; color: var(--text-dim); line-height: 1.6; }
+
+    .section-header {
+      text-align: center;
+      padding: 4rem 2rem 1rem;
+      background: var(--bg);
+    }
+    .section-header h2 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .section-header p { color: var(--text-dim); font-size: 1rem; }
+
+    @media (max-width: 480px) {
+      h1 { font-size: 2.5rem; }
+      .cta-row { flex-direction: column; align-items: stretch; }
+    }
+  </style>
+</head>
+<body>
+
+  <section class="hero">
+    <div class="hero-bg"></div>
+    <div class="hero-content">
+      <img src="/api/pigeon.jpeg" alt="NightPigeon" class="logo">
+      <h1>NightPigeon</h1>
+      <p class="tagline">
+        A powerful, YAML-driven moderation bot for Discord —
+        designed for reliability, flexibility, and full dashboard control.
+      </p>
+      <div class="cta-row">
+        <a href="/api/dashboard" class="btn btn-primary">Dashboard</a>
+        <a href="#docs" class="btn btn-outline">Documentation</a>
+      </div>
+    </div>
+    <div class="footer-links">
+      <a href="#">Discord Server</a>
+      <a href="#">GitHub</a>
+      <a href="#">Privacy Policy</a>
+    </div>
+  </section>
+
+  <div class="section-header" id="docs">
+    <h2>Everything you need to moderate</h2>
+    <p>All configured through clean YAML — no confusing commands.</p>
+  </div>
+
+  <section class="features">
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">🛡️</div>
+        <h3>AutoMod</h3>
+        <p>Anti-spam, invite blocking, bad-word filtering, and caps detection — all configurable per server.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📋</div>
+        <h3>Case Logging</h3>
+        <p>Every moderation action is recorded with a case number, moderator, and reason for full accountability.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <h3>YAML Config</h3>
+        <p>Configure every aspect of the bot per server through a clean YAML editor in the dashboard.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">📝</div>
+        <h3>Event Logging</h3>
+        <p>Message deletes, edits, member joins and leaves, bans — all posted to your log channel.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🔇</div>
+        <h3>Timed Mutes</h3>
+        <p>Mute members with automatic expiry — no need to manually unmute after the duration.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">⚙️</div>
+        <h3>Plugin System</h3>
+        <p>Enable only what you need. Each feature is a plugin you opt into via config.</p>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NightPigeon — Config Editor</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/theme/material-darker.min.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117;
+      --nav-bg: #161b27;
+      --surface: #1a2040;
+      --border: #2a3556;
+      --text: #e8eaf6;
+      --text-dim: #8892b0;
+      --accent: #7986cb;
+      --accent-hover: #9fa8da;
+      --success: #4caf50;
+      --success-hover: #66bb6a;
+      --danger: #ef5350;
+    }
+    html, body {
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg); color: var(--text);
+    }
+    nav {
+      background: var(--nav-bg); border-bottom: 1px solid var(--border);
+      height: 56px; display: flex; align-items: center;
+      padding: 0 2rem; gap: 1rem; position: sticky; top: 0; z-index: 100;
+    }
+    .nav-logo { display: flex; align-items: center; gap: 0.6rem; text-decoration: none; margin-right: auto; }
+    .nav-logo img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+    .nav-logo span { font-weight: 700; font-size: 1rem; color: var(--text); }
+    .breadcrumb { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--text-dim); }
+    .breadcrumb a { color: var(--text-dim); text-decoration: none; }
+    .breadcrumb a:hover { color: var(--text); }
+    .breadcrumb span { color: var(--text); }
+
+    main { max-width: 1000px; margin: 0 auto; padding: 2rem; display: flex; flex-direction: column; gap: 1.25rem; }
+
+    .page-header {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap;
+    }
+    .page-title h1 { font-size: 1.75rem; font-weight: 700; }
+    .page-title .guild-id { font-size: 0.8rem; color: var(--text-dim); font-family: monospace; margin-top: 0.25rem; }
+    .action-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+
+    .btn {
+      padding: 0.55rem 1.25rem; border-radius: 6px; font-size: 0.9rem;
+      font-weight: 500; cursor: pointer; border: none; transition: all 0.15s;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+    }
+    .btn-save { background: var(--success); color: #fff; }
+    .btn-save:hover { background: var(--success-hover); }
+    .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-reset { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+    .btn-reset:hover { border-color: var(--accent); color: var(--text); }
+
+    .save-status { font-size: 0.85rem; color: var(--text-dim); transition: all 0.3s; }
+    .save-status.success { color: var(--success); }
+    .save-status.error { color: var(--danger); }
+
+    .editor-wrap { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .editor-toolbar {
+      background: #1a1f2e; border-bottom: 1px solid var(--border);
+      padding: 0.5rem 1rem; display: flex; align-items: center;
+      gap: 0.75rem; font-size: 0.8rem; color: var(--text-dim);
+    }
+    .lang-tag {
+      background: var(--border); padding: 0.15rem 0.5rem;
+      border-radius: 4px; font-family: monospace; font-size: 0.75rem;
+    }
+    .line-info { margin-left: auto; font-family: monospace; }
+
+    .CodeMirror {
+      height: calc(100vh - 280px); min-height: 400px;
+      font-family: 'SFMono-Regular', 'Fira Code', Consolas, monospace;
+      font-size: 13.5px; line-height: 1.6; background: #1a1f2e !important;
+    }
+    .CodeMirror-scroll { background: #1a1f2e; }
+
+    .info-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem 1.25rem;
+      font-size: 0.85rem; color: var(--text-dim); line-height: 1.6;
+    }
+    .info-box strong { color: var(--text); }
+    .info-box code {
+      background: rgba(121,134,203,0.12); color: var(--accent-hover);
+      padding: 0.1em 0.35em; border-radius: 3px; font-size: 0.8rem; font-family: monospace;
+    }
+    @media (max-width: 600px) { main { padding: 1rem; } .page-header { flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/api/" class="nav-logo">
+      <img src="/api/pigeon.jpeg" alt="NightPigeon">
+      <span>NightPigeon</span>
+    </a>
+    <div class="breadcrumb">
+      <a href="/api/dashboard">Guilds</a>
+      <span>›</span>
+      <span id="navGuildName">Loading...</span>
+    </div>
+  </nav>
+
+  <main>
+    <div class="page-header">
+      <div class="page-title">
+        <h1 id="pageTitle">Config</h1>
+        <div class="guild-id" id="guildIdDisplay"></div>
+      </div>
+      <div class="action-row">
+        <span class="save-status" id="saveStatus"></span>
+        <button class="btn btn-reset" id="btnReset">Reset</button>
+        <button class="btn btn-save" id="btnSave">Save</button>
+      </div>
+    </div>
+
+    <div class="info-box">
+      <strong>YAML Config</strong> — Changes apply the next time the bot reads the config.
+      Use <code>plugins.logs.config.log_channel</code>, <code>plugins.automod.config.enabled</code>, etc.
+      Indent with 2 spaces. Press <code>Ctrl+S</code> to save.
+    </div>
+
+    <div class="editor-wrap">
+      <div class="editor-toolbar">
+        <span class="lang-tag">yaml</span>
+        <span id="toolbarGuildName">—</span>
+        <span class="line-info" id="lineInfo">Ln 1, Col 1</span>
+      </div>
+      <textarea id="editor"></textarea>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/codemirror.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.17/mode/yaml/yaml.min.js"></script>
+  <script>
+    const BASE = window.location.origin;
+    const guildId = location.pathname.split('/').filter(Boolean).pop();
+
+    const editor = CodeMirror.fromTextArea(document.getElementById('editor'), {
+      mode: 'yaml',
+      theme: 'material-darker',
+      lineNumbers: true,
+      indentUnit: 2,
+      tabSize: 2,
+      indentWithTabs: false,
+      lineWrapping: false,
+      autofocus: true,
+      extraKeys: {
+        "Ctrl-S": save,
+        "Cmd-S": save,
+        Tab: cm => cm.execCommand('insertSoftTab'),
+      }
+    });
+
+    editor.on('cursorActivity', () => {
+      const cur = editor.getCursor();
+      document.getElementById('lineInfo').textContent = `Ln ${cur.line + 1}, Col ${cur.ch + 1}`;
+    });
+
+    let originalConfig = '';
+
+    async function loadConfig() {
+      document.getElementById('guildIdDisplay').textContent = guildId;
+      try {
+        const guildsRes = await fetch(`${BASE}/api/guilds`);
+        const guilds = await guildsRes.json();
+        const guild = guilds.find(g => g.id === guildId);
+        const name = guild ? guild.name : `Guild ${guildId}`;
+        document.getElementById('pageTitle').textContent = `Config for ${name}`;
+        document.getElementById('navGuildName').textContent = name;
+        document.getElementById('toolbarGuildName').textContent = name;
+      } catch {
+        document.getElementById('pageTitle').textContent = `Config for ${guildId}`;
+        document.getElementById('navGuildName').textContent = guildId;
+        document.getElementById('toolbarGuildName').textContent = guildId;
+      }
+      try {
+        const res = await fetch(`${BASE}/api/guilds/${guildId}/config`);
+        const { config } = await res.json();
+        const val = config || defaultYaml();
+        originalConfig = val;
+        editor.setValue(val);
+        editor.refresh();
+      } catch {
+        setStatus('Failed to load config', 'error');
+      }
+    }
+
+    async function save() {
+      const btn = document.getElementById('btnSave');
+      btn.disabled = true;
+      setStatus('Saving...', '');
+      try {
+        const res = await fetch(`${BASE}/api/guilds/${guildId}/config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ config: editor.getValue() }),
+        });
+        if (res.ok) {
+          originalConfig = editor.getValue();
+          setStatus('✓ Saved', 'success');
+          setTimeout(() => setStatus('', ''), 3000);
+        } else {
+          setStatus('Failed to save', 'error');
+        }
+      } catch { setStatus('Network error', 'error'); }
+      finally { btn.disabled = false; }
+    }
+
+    function reset() {
+      if (editor.getValue() !== originalConfig) {
+        if (confirm('Discard unsaved changes?')) {
+          editor.setValue(originalConfig);
+          setStatus('Reset to last saved', '');
+          setTimeout(() => setStatus('', ''), 2000);
+        }
+      }
+    }
+
+    function setStatus(msg, type) {
+      const el = document.getElementById('saveStatus');
+      el.textContent = msg;
+      el.className = 'save-status' + (type ? ` ${type}` : '');
+    }
+
+    function defaultYaml() {
+      return `prefix: "!"
+
+levels:
+  # User ID: permission level (0-500)
+  # 500 = Owner, 100 = Admin, 50 = Mod, 25 = Helper
+
+plugins:
+
+  logs:
+    config:
+      log_channel: null
+      mod_log_channel: null
+      include:
+        - message_delete
+        - message_edit
+        - member_join
+        - member_leave
+        - member_ban
+        - member_unban
+
+  mutes:
+    config:
+      mute_role: null
+
+  automod:
+    config:
+      enabled: false
+      anti_spam:
+        enabled: false
+        messages: 5
+        seconds: 5
+        action: mute
+        duration: 300
+      anti_invite:
+        enabled: false
+        action: delete
+      bad_words:
+        enabled: false
+        words: []
+        action: delete
+      caps_limit:
+        enabled: false
+        percent: 70
+        min_length: 10
+        action: warn
+`;
+    }
+
+    document.getElementById('btnSave').addEventListener('click', save);
+    document.getElementById('btnReset').addEventListener('click', reset);
+    loadConfig();
+  </script>
+</body>
+</html>

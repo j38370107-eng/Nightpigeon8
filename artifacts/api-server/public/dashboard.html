@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NightPigeon — Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d1117;
+      --nav-bg: #161b27;
+      --surface: #1a2040;
+      --surface-hover: #1f2847;
+      --border: #2a3556;
+      --text: #e8eaf6;
+      --text-dim: #8892b0;
+      --accent: #7986cb;
+      --accent-hover: #9fa8da;
+    }
+    html, body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    nav {
+      background: var(--nav-bg);
+      border-bottom: 1px solid var(--border);
+      height: 56px;
+      display: flex;
+      align-items: center;
+      padding: 0 2rem;
+      gap: 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 0.6rem; text-decoration: none;
+    }
+    .nav-logo img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
+    .nav-logo span { font-weight: 700; font-size: 1rem; color: var(--text); }
+    .nav-links { display: flex; gap: 1.5rem; margin-left: auto; }
+    .nav-links a {
+      color: var(--text-dim); text-decoration: none; font-size: 0.9rem; transition: color 0.15s;
+    }
+    .nav-links a:hover, .nav-links a.active { color: var(--text); }
+    .nav-links a.active { border-bottom: 2px solid var(--accent); padding-bottom: 2px; }
+
+    main { max-width: 860px; margin: 0 auto; padding: 3rem 2rem; }
+    h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
+    .subtitle { color: var(--text-dim); font-size: 0.95rem; margin-bottom: 2.5rem; }
+
+    .bot-status {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 0.3rem 0.75rem;
+      font-size: 0.8rem; color: var(--text-dim); margin-bottom: 2.5rem;
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #4caf50; }
+    .status-dot.offline { background: #555; }
+
+    .guild-list { display: flex; flex-direction: column; gap: 0.75rem; }
+    .guild-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem 1.25rem;
+      display: flex; align-items: center; gap: 1rem;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .guild-card:hover { border-color: var(--accent); background: var(--surface-hover); }
+    .guild-icon { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .guild-icon-placeholder {
+      width: 48px; height: 48px; border-radius: 50%; background: var(--border);
+      flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem; font-weight: 700; color: var(--text-dim);
+    }
+    .guild-info { flex: 1; min-width: 0; }
+    .guild-name { font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .guild-id { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.2rem; font-family: monospace; }
+    .btn-config {
+      padding: 0.45rem 1.1rem; background: transparent; color: var(--text-dim);
+      border: 1px solid var(--border); border-radius: 6px; font-size: 0.85rem;
+      font-weight: 500; cursor: pointer; text-decoration: none;
+      transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-config:hover { border-color: var(--accent); color: var(--accent-hover); }
+
+    .empty-state { text-align: center; padding: 4rem 2rem; color: var(--text-dim); }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 1rem; }
+    .empty-state p { font-size: 0.95rem; line-height: 1.6; }
+
+    .skeleton {
+      height: 74px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; animation: pulse 1.4s ease-in-out infinite; margin-bottom: 0.75rem;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/api/" class="nav-logo">
+      <img src="/api/pigeon.jpeg" alt="NightPigeon">
+      <span>NightPigeon</span>
+    </a>
+    <div class="nav-links">
+      <a href="/api/dashboard" class="active">Guilds</a>
+      <a href="/api/#docs">Docs</a>
+    </div>
+  </nav>
+
+  <main>
+    <h1>Guilds</h1>
+    <p class="subtitle">Select a server to edit its configuration.</p>
+    <div class="bot-status" id="statusBadge">
+      <span class="status-dot offline"></span>
+      <span id="statusText">Checking bot status...</span>
+    </div>
+    <div class="guild-list" id="guildList">
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+      <div class="skeleton"></div>
+    </div>
+  </main>
+
+  <script>
+    const BASE = window.location.origin;
+    function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    async function loadGuilds() {
+      const list = document.getElementById('guildList');
+      try {
+        const res = await fetch(`${BASE}/api/guilds`);
+        const guilds = await res.json();
+        const dot = document.querySelector('.status-dot');
+        const txt = document.getElementById('statusText');
+        if (guilds.length > 0) {
+          dot.classList.remove('offline');
+          txt.textContent = `Bot online — ${guilds.length} server${guilds.length !== 1 ? 's' : ''}`;
+        } else {
+          txt.textContent = 'Bot not connected or no servers';
+        }
+        if (guilds.length === 0) {
+          list.innerHTML = `<div class="empty-state"><div class="icon">🌙</div><p>No servers found. Make sure the bot is running and has joined at least one server.</p></div>`;
+          return;
+        }
+        list.innerHTML = guilds.map(g => `
+          <div class="guild-card">
+            ${g.icon
+              ? `<img class="guild-icon" src="${escapeHtml(g.icon)}" alt="${escapeHtml(g.name)}" onerror="this.style.display='none';this.nextElementSibling.style.removeProperty('display')">`
+              : ''}
+            <div class="guild-icon-placeholder" ${g.icon ? 'style="display:none"' : ''}>
+              ${escapeHtml(g.name.charAt(0).toUpperCase())}
+            </div>
+            <div class="guild-info">
+              <div class="guild-name">${escapeHtml(g.name)}</div>
+              <div class="guild-id">${g.id}</div>
+            </div>
+            <a href="/api/dashboard/${g.id}" class="btn-config">Config</a>
+          </div>
+        `).join('');
+      } catch {
+        list.innerHTML = `<div class="empty-state"><div class="icon">⚠️</div><p>Could not reach the API. Make sure the server is running.</p></div>`;
+      }
+    }
+    loadGuilds();
+  </script>
+</body>
+</html>

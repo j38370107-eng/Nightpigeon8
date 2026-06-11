@@ -1,38 +1,51 @@
 prefix: "!"
-log_channel: null
-mod_log_channel: null
-mute_role: null
 
-automod:
-  enabled: false
-  anti_spam:
-    enabled: false
-    messages: 5
-    seconds: 5
-    action: mute
-    duration: 300
-  anti_invite:
-    enabled: false
-    action: delete
-  bad_words:
-    enabled: false
-    words: []
-    action: delete
-  caps_limit:
-    enabled: false
-    percent: 70
-    min_length: 10
-    action: warn
+levels:
+  # Map user IDs or role IDs to permission levels
+  # 500 = Owner, 100 = Admin, 50 = Mod, 25 = Helper
+  # Example:
+  # "123456789012345678": 100
 
-moderation:
-  default_mute_duration: 3600
-  dm_on_action: true
+plugins:
 
-logging:
-  message_delete: true
-  message_edit: true
-  member_join: true
-  member_leave: true
-  member_ban: true
-  member_unban: true
-  member_kick: true
+  logs:
+    config:
+      log_channel: null
+      mod_log_channel: null
+      include:
+        - message_delete
+        - message_edit
+        - member_join
+        - member_leave
+        - member_ban
+        - member_unban
+
+  mutes:
+    config:
+      mute_role: null
+
+  mod_actions:
+    config:
+      dm_on_action: true
+
+  automod:
+    config:
+      enabled: false
+      anti_spam:
+        enabled: false
+        messages: 5
+        seconds: 5
+        action: mute
+        duration: 300
+      anti_invite:
+        enabled: false
+        action: delete
+      bad_words:
+        enabled: false
+        words: []
+        action: delete
+      caps_limit:
+        enabled: false
+        percent: 70
+        min_length: 10
+        action: warn

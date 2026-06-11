@@ -35,9 +35,24 @@ async def get_guilds(request: Request):
         raise HTTPException(status_code=401, detail="No access token")
 
     user_guilds = await _get_user_guilds(access_token)
-    user_guild_ids = {int(g["id"]) for g in user_guilds}
 
-    bot = request.app.state.bot
+    bot = getattr(request.app.state, "bot", None)
+    if not bot:
+        # Bot not running — return all user guilds where they have Manage Server
+        MANAGE_GUILD = 0x20
+        return [
+            {
+                "id": str(g["id"]),
+                "name": g["name"],
+                "icon": f"https://cdn.discordapp.com/icons/{g['id']}/{g['icon']}.png" if g.get("icon") else None,
+                "member_count": None,
+                "bot_present": False,
+            }
+            for g in user_guilds
+            if g.get("permissions") and int(g["permissions"]) & MANAGE_GUILD
+        ]
+
+    user_guild_ids = {int(g["id"]) for g in user_guilds}
     bot_guilds = []
     for guild in bot.guilds:
         if guild.id in user_guild_ids:
@@ -46,6 +61,7 @@ async def get_guilds(request: Request):
                 "name": guild.name,
                 "icon": str(guild.icon.url) if guild.icon else None,
                 "member_count": guild.member_count,
+                "bot_present": True,
             })
 
     return bot_guilds

@@ -22,14 +22,15 @@
       <a href="/docs-page">Docs</a>
     </div>
     <div class="navbar-right">
-      <div class="user-badge"></div>
-      <a href="/api/auth/logout" class="btn btn-secondary">Log out</a>
+      <div class="user-badge" id="user-info"></div>
+      <a href="/api/auth/login" class="btn btn-primary" id="login-btn" style="display:none">Login with Discord</a>
+      <a href="/api/auth/logout" class="btn btn-secondary" id="logout-btn" style="display:none">Log out</a>
     </div>
   </nav>
 
   <main>
     <div class="flash-container"></div>
-    <h1 class="page-title">Guilds</h1>
+    <h1 class="page-title">Your Servers</h1>
 
     <div id="guild-list" class="guild-grid">
       <div style="grid-column:1/-1; text-align:center; padding:60px; color:var(--text-muted)">
@@ -55,6 +56,7 @@
 <script src="/static/app.js"></script>
 <script>
 async function loadGuilds() {
+  await requireAuth();
   try {
     const guilds = await apiFetch('/api/guilds');
     const list = document.getElementById('guild-list');
@@ -72,14 +74,21 @@ async function loadGuilds() {
         ? `<img src="${guild.icon}" alt="${guild.name}" />`
         : `<span>${guild.name[0].toUpperCase()}</span>`;
 
+      const hasMember = guild.member_count !== null && guild.member_count !== undefined;
+      const botPresent = guild.bot_present !== false;
+      const memberLabel = hasMember ? `${guild.member_count.toLocaleString()} members` : 'Bot not in server';
+      const actionBtn = botPresent
+        ? `<a href="/config?guild=${guild.id}" class="btn btn-primary">Config</a>`
+        : `<span class="btn btn-secondary" style="opacity:0.6;cursor:default">Invite Bot</span>`;
+
       list.innerHTML += `
-        <div class="guild-card" onclick="window.location.href='/config?guild=${guild.id}'">
+        <div class="guild-card" ${botPresent ? `onclick="window.location.href='/config?guild=${guild.id}'"` : ''} style="${!botPresent ? 'opacity:0.7' : ''}">
           <div class="guild-icon">${icon}</div>
           <div class="guild-info">
             <h3>${guild.name}</h3>
-            <small>${guild.member_count?.toLocaleString() || '?'} members</small>
+            <small>${memberLabel}</small>
           </div>
-          <a href="/config?guild=${guild.id}" class="btn btn-primary">Config</a>
+          ${actionBtn}
         </div>
       `;
     });

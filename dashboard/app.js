@@ -49,24 +49,55 @@ function createStars(count = 80) {
 async function loadUser() {
   try {
     const user = await apiFetch('/api/auth/me', {}, false);
-    if (!user) return null;
+    if (!user) {
+      _applyNavState(null);
+      return null;
+    }
 
     const avatarUrl = user.avatar
       ? `https://cdn.discordapp.com/avatars/${user.user_id}/${user.avatar}.png?size=64`
       : `https://cdn.discordapp.com/embed/avatars/${parseInt(user.user_id || '0') % 6}.png`;
 
-    const badges = document.querySelectorAll('.user-badge');
-    badges.forEach(badge => {
+    document.querySelectorAll('.user-badge').forEach(badge => {
       badge.innerHTML = `
         <img src="${avatarUrl}" alt="${user.username}"
              onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'" />
         ${user.username}
       `;
     });
+
+    _applyNavState(user);
     return user;
   } catch {
+    _applyNavState(null);
     return null;
   }
+}
+
+function _applyNavState(user) {
+  const loginBtn  = document.getElementById('login-btn');
+  const logoutBtn = document.getElementById('logout-btn');
+  const userInfo  = document.getElementById('user-info');
+
+  if (user) {
+    if (userInfo)  userInfo.style.display  = 'flex';
+    if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+    if (loginBtn)  loginBtn.style.display  = 'none';
+  } else {
+    if (userInfo)  userInfo.style.display  = 'none';
+    if (logoutBtn) logoutBtn.style.display = 'none';
+    if (loginBtn)  loginBtn.style.display  = 'inline-flex';
+  }
+}
+
+// ── Require login — redirects to Discord OAuth if not authed ────
+async function requireAuth() {
+  const user = await loadUser();
+  if (!user) {
+    window.location.href = '/api/auth/login';
+    throw new Error('Redirecting to login');
+  }
+  return user;
 }
 
 // ── Flash messages ──────────────────────────────────────────────

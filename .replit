@@ -39,13 +39,13 @@ outputType = "console"
 name = "API Server"
 author = "agent"
 
+[workflows.workflow.metadata]
+outputType = "webview"
+
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "node --enable-source-maps artifacts/api-server/dist/index.mjs"
-waitForPort = 8080
-
-[workflows.workflow.metadata]
-outputType = "console"
+waitForPort = 5000
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
@@ -56,8 +56,16 @@ path = "scripts/post-merge.sh"
 timeoutMs = 20000
 
 [[ports]]
+localPort = 5000
+externalPort = 5000
+
+[[ports]]
 localPort = 8080
 externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
 
 [nix]
 channel = "stable-25_05"
@@ -66,4 +74,4 @@ packages = ["libyaml"]
 [userenv]
 
 [userenv.shared]
-PORT = "8080"
+PORT = "5000"

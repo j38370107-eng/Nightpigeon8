@@ -1,0 +1,38 @@
+prefix: "!"
+log_channel: null
+mod_log_channel: null
+mute_role: null
+
+automod:
+  enabled: false
+  anti_spam:
+    enabled: false
+    messages: 5
+    seconds: 5
+    action: mute
+    duration: 300
+  anti_invite:
+    enabled: false
+    action: delete
+  bad_words:
+    enabled: false
+    words: []
+    action: delete
+  caps_limit:
+    enabled: false
+    percent: 70
+    min_length: 10
+    action: warn
+
+moderation:
+  default_mute_duration: 3600
+  dm_on_action: true
+
+logging:
+  message_delete: true
+  message_edit: true
+  member_join: true
+  member_leave: true
+  member_ban: true
+  member_unban: true
+  member_kick: true

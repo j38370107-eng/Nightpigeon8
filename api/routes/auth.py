@@ -285,11 +285,22 @@ async def callback(
         session_id = await _create_session(session_data)
     except Exception as e:
         log.error(f"Failed to create session: {e}")
-        return RedirectResponse(error_page)
+        err = f"{dashboard_url}/?auth_error=session_failed" if dashboard_url else "/?auth_error=session_failed"
+        return RedirectResponse(err)
 
     log.info(f"Login success for {user_data['username']} ({user_data['id']})")
 
-    resp = RedirectResponse(guilds_page, status_code=302)
+    # Use a 200 HTML page + JS redirect instead of 302.
+    # Render's reverse proxy strips Set-Cookie headers from 3xx responses,
+    # so the browser would never receive the session cookie.
+    # A 200 response is never tampered with, so the cookie lands correctly.
+    dest = json.dumps(guilds_page)
+    html = (
+        "<!doctype html><html><body><script>"
+        f"window.location.replace({dest});"
+        "</script></body></html>"
+    )
+    resp = HTMLResponse(content=html, status_code=200)
     _set_session_cookie(resp, session_id)
     return resp
 
@@ -302,7 +313,13 @@ async def logout(request: Request):
         await _delete_session(session_id)
     cfg = _cfg(request)
     home = cfg["dashboard_url"] or "/"
-    resp = RedirectResponse(home, status_code=302)
+    dest = json.dumps(home)
+    html = (
+        "<!doctype html><html><body><script>"
+        f"window.location.replace({dest});"
+        "</script></body></html>"
+    )
+    resp = HTMLResponse(content=html, status_code=200)
     _clear_session_cookie(resp)
     return resp
 

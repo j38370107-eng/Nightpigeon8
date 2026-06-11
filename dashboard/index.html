@@ -127,11 +127,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(window.location.search);
   if (params.get('auth_error')) {
     const reason = params.get('auth_error');
-    let msg = 'Discord login failed. Please try again.';
+    let msg = `Discord login failed (code: ${reason}). Please try again.`;
     if (reason === 'no_credentials') {
-      msg = 'Discord OAuth is not configured yet. Set CLIENT_ID and CLIENT_SECRET in the environment secrets.';
+      msg = 'Discord OAuth is not configured. Set CLIENT_ID and CLIENT_SECRET in environment secrets.';
     } else if (reason === 'token_exchange') {
-      msg = 'Discord rejected the login. Make sure your CLIENT_ID, CLIENT_SECRET, and redirect URI are correct in the Discord Developer Portal.';
+      msg = 'Discord rejected the login — redirect URI mismatch. Check that the redirect URI in your Discord app exactly matches your site URL + /api/auth/callback.';
+    } else if (reason === 'session_failed') {
+      msg = 'Login succeeded but the session could not be saved (database error). Visit /api/auth/debug for details.';
     }
     showAlert(msg, 'error');
     // Clean the URL so a refresh doesn't re-show the error

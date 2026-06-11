@@ -26,6 +26,10 @@ app.use(express.urlencoded({ extended: true }));
 
 const publicDir = path.join(__dirname, "..", "public");
 
+app.get("/", (_req, res) => {
+  res.redirect("/api/dashboard");
+});
+
 app.use("/api", express.static(publicDir));
 
 app.get("/api/dashboard", (_req, res) => {

@@ -38,7 +38,7 @@ def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
 
     @app.api_route("/ping", methods=["GET", "HEAD"])
     async def ping():
-        return "pong"
+        return Response(content="pong", media_type="text/plain")
 
     @app.get("/api/healthz")
     async def healthz():

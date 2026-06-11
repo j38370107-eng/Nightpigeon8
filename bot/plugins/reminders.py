@@ -23,13 +23,14 @@ class RemindersCog(commands.Cog):
     async def reminder_loop(self):
         pool = await get_pool()
         now = datetime.now(timezone.utc)
+        now_naive = datetime.utcnow()
         async with pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM reminders WHERE remind_at <= $1", now
+                "SELECT * FROM reminders WHERE remind_at <= $1", now_naive
             )
             if rows:
                 await conn.execute(
-                    "DELETE FROM reminders WHERE remind_at <= $1", now
+                    "DELETE FROM reminders WHERE remind_at <= $1", now_naive
                 )
 
         for row in rows:

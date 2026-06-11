@@ -122,6 +122,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     userInfo.style.display = 'none';
     loginBtn.style.display = 'inline-flex';
   }
+
+  // Show auth error banner if Discord OAuth failed
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('auth_error')) {
+    const reason = params.get('auth_error');
+    let msg = 'Discord login failed. Please try again.';
+    if (reason === 'no_credentials') {
+      msg = 'Discord OAuth is not configured yet. Set CLIENT_ID and CLIENT_SECRET in the environment secrets.';
+    } else if (reason === 'token_exchange') {
+      msg = 'Discord rejected the login. Make sure your CLIENT_ID, CLIENT_SECRET, and redirect URI are correct in the Discord Developer Portal.';
+    }
+    showAlert(msg, 'error');
+    // Clean the URL so a refresh doesn't re-show the error
+    history.replaceState(null, '', '/');
+  }
 });
 </script>
 </body>

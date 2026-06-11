@@ -1,5 +1,6 @@
 import os
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -14,8 +15,23 @@ log = logging.getLogger("api.server")
 DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Initialize the database pool on startup so auth routes always work,
+    even when the Discord bot is not running (dashboard-only mode)."""
+    from bot.core.database import init_db, _pool
+    if _pool is None:
+        try:
+            await init_db()
+            log.info("Database initialized via FastAPI startup")
+        except Exception as e:
+            log.error(f"Database init failed on startup: {e}")
+    yield
+
+
 def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
-    app = FastAPI(title="Nightpigeon API", docs_url=None, redoc_url=None, redirect_slashes=False)
+    app = FastAPI(title="Nightpigeon API", docs_url=None, redoc_url=None,
+                  redirect_slashes=False, lifespan=_lifespan)
 
     # Build the allowed-origins list.
     # Browsers reject Access-Control-Allow-Origin: * when credentials are included,

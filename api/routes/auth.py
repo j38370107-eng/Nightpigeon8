@@ -75,7 +75,11 @@ def _build_redirect_uri(request: Request) -> str:
 
 def _behind_https() -> bool:
     """True when running behind an HTTPS proxy (Render, Replit)."""
-    return bool(os.environ.get("RENDER") or os.environ.get("REPLIT_DOMAINS"))
+    return bool(
+        os.environ.get("RENDER")
+        or os.environ.get("REPLIT_DOMAINS")
+        or os.environ.get("REPLIT_DEV_DOMAIN")
+    )
 
 
 def _set_session_cookie(response, token: str):
@@ -125,11 +129,10 @@ async def debug_config(request: Request):
 async def login(request: Request):
     cfg = _cfg(request)
 
-    if not cfg["client_id"]:
-        return HTMLResponse(
-            "<h2 style='font-family:sans-serif;color:#e74c3c'>⚠️ Discord OAuth not configured</h2>"
-            "<p style='font-family:sans-serif'>The <b>CLIENT_ID</b> env var is not set.</p>",
-            status_code=503,
+    if not cfg["client_id"] or not cfg["client_secret"]:
+        dashboard_url = cfg["dashboard_url"]
+        return RedirectResponse(
+            f"{dashboard_url}/?auth_error=no_credentials" if dashboard_url else "/?auth_error=no_credentials"
         )
 
     state = secrets.token_urlsafe(32)
@@ -205,7 +208,8 @@ async def callback(
             )
             if token_resp.status_code != 200:
                 log.error(f"Token exchange failed ({token_resp.status_code}): {token_resp.text}")
-                return RedirectResponse(error_page)
+                exchange_error = f"{dashboard_url}/?auth_error=token_exchange" if dashboard_url else "/?auth_error=token_exchange"
+                return RedirectResponse(exchange_error)
 
             token_data   = token_resp.json()
             access_token = token_data["access_token"]

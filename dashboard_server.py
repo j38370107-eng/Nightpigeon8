@@ -60,6 +60,10 @@ def create_dashboard_app() -> FastAPI:
     async def ping():
         return Response(content="pong", media_type="text/plain")
 
+    @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+    async def catch_all(full_path: str):
+        return FileResponse(str(DASHBOARD_DIR / "index.html"))
+
     return app
 
 

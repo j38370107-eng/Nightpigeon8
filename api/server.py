@@ -76,4 +76,11 @@ def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
         async def docs_page():
             return FileResponse(str(DASHBOARD_DIR / "docs.html"))
 
+        @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
+        async def catch_all(full_path: str):
+            if full_path.startswith("api/"):
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": "Not Found"}, status_code=404)
+            return FileResponse(str(DASHBOARD_DIR / "index.html"))
+
     return app

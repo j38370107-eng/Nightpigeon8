@@ -21,10 +21,10 @@ async def main():
 
     from bot.core.bot import NightpigeonBot
     bot = NightpigeonBot()
-    app = create_app(bot=bot, serve_dashboard=False)
+    app = create_app(bot=bot, serve_dashboard=True)
     config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")
     server = uvicorn.Server(config)
-    log.info(f"Starting Nightpigeon bot + API (no dashboard) on port {port}")
+    log.info(f"Starting Nightpigeon bot + API + dashboard on port {port}")
     await asyncio.gather(bot.start(token), server.serve())
 
 

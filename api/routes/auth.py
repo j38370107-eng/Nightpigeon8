@@ -2,34 +2,41 @@ import os
 import secrets
 import httpx
 import logging
+from urllib.parse import urlencode
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Request, Response, HTTPException
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, HTMLResponse
 from jose import jwt, JWTError
 
 log = logging.getLogger("api.auth")
 
 router = APIRouter()
 
-CLIENT_ID = os.environ.get("CLIENT_ID", "")
-CLIENT_SECRET = os.environ.get("CLIENT_SECRET", "")
-REDIRECT_URI = os.environ.get("REDIRECT_URI", "")
-API_SECRET_KEY = os.environ.get("API_SECRET_KEY", "changeme-secret-key-123")
 ALGORITHM = "HS256"
 SESSION_EXPIRE_HOURS = 24
-
 DISCORD_API = "https://discord.com/api/v10"
 
 
+def _cfg():
+    return {
+        "client_id": os.environ.get("CLIENT_ID", ""),
+        "client_secret": os.environ.get("CLIENT_SECRET", ""),
+        "redirect_uri": os.environ.get("REDIRECT_URI", ""),
+        "secret_key": os.environ.get("API_SECRET_KEY", "changeme-secret-key-123"),
+    }
+
+
 def create_jwt(data: dict) -> str:
+    cfg = _cfg()
     expire = datetime.now(timezone.utc) + timedelta(hours=SESSION_EXPIRE_HOURS)
     data.update({"exp": expire})
-    return jwt.encode(data, API_SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(data, cfg["secret_key"], algorithm=ALGORITHM)
 
 
 def decode_jwt(token: str) -> dict | None:
+    cfg = _cfg()
     try:
-        return jwt.decode(token, API_SECRET_KEY, algorithms=[ALGORITHM])
+        return jwt.decode(token, cfg["secret_key"], algorithms=[ALGORITHM])
     except JWTError:
         return None
 
@@ -43,8 +50,18 @@ def get_current_user(request: Request) -> dict | None:
 
 @router.get("/api/auth/login")
 async def login(request: Request):
+    cfg = _cfg()
+
+    if not cfg["client_id"]:
+        return HTMLResponse(
+            "<h2 style='font-family:sans-serif;color:#e74c3c'>⚠️ Discord OAuth not configured</h2>"
+            "<p style='font-family:sans-serif'>The <b>CLIENT_ID</b> secret is not set. "
+            "Add it in the Replit Secrets panel and restart the app.</p>",
+            status_code=503,
+        )
+
     state = secrets.token_urlsafe(32)
-    # Store state in DB
+
     from bot.core.database import get_pool
     try:
         pool = await get_pool()
@@ -55,26 +72,27 @@ async def login(request: Request):
     except Exception:
         pass
 
-    params = {
-        "client_id": CLIENT_ID,
-        "redirect_uri": REDIRECT_URI,
+    params = urlencode({
+        "client_id": cfg["client_id"],
+        "redirect_uri": cfg["redirect_uri"],
         "response_type": "code",
         "scope": "identify guilds",
         "state": state,
-    }
-    auth_url = "https://discord.com/api/oauth2/authorize?" + "&".join(f"{k}={v}" for k, v in params.items())
+    })
+    auth_url = f"https://discord.com/api/oauth2/authorize?{params}"
     return RedirectResponse(auth_url)
 
 
 @router.get("/api/auth/callback")
 async def callback(request: Request, response: Response, code: str = None, state: str = None, error: str = None):
+    cfg = _cfg()
+
     if error:
         return RedirectResponse("/")
 
     if not code or not state:
         raise HTTPException(status_code=400, detail="Missing code or state")
 
-    # Validate state
     from bot.core.database import get_pool
     try:
         pool = await get_pool()
@@ -89,20 +107,20 @@ async def callback(request: Request, response: Response, code: str = None, state
     except Exception:
         pass
 
-    # Exchange code for token
     async with httpx.AsyncClient() as client:
         token_resp = await client.post(
             f"{DISCORD_API}/oauth2/token",
             data={
-                "client_id": CLIENT_ID,
-                "client_secret": CLIENT_SECRET,
+                "client_id": cfg["client_id"],
+                "client_secret": cfg["client_secret"],
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": REDIRECT_URI,
+                "redirect_uri": cfg["redirect_uri"],
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if token_resp.status_code != 200:
+            log.error(f"Token exchange failed: {token_resp.text}")
             raise HTTPException(status_code=400, detail="Failed to exchange code")
 
         token_data = token_resp.json()
@@ -122,7 +140,7 @@ async def callback(request: Request, response: Response, code: str = None, state
         "access_token": access_token,
     }
     token = create_jwt(session_data)
-    resp = RedirectResponse("/api/dashboard")
+    resp = RedirectResponse("/guilds")
     resp.set_cookie("session", token, httponly=True, samesite="lax", max_age=SESSION_EXPIRE_HOURS * 3600)
     return resp
 

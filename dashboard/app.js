@@ -1,6 +1,6 @@
 // Nightpigeon Dashboard - Shared JS Utilities
 
-const API_BASE = '';
+const API_BASE = (typeof window !== 'undefined' && window.API_BASE) ? window.API_BASE : '';
 
 // ── Fetch helpers ───────────────────────────────────────────────
 async function apiFetch(path, options = {}, redirectOn401 = true) {

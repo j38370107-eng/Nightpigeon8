@@ -1,16 +1,14 @@
 services:
   - type: web
-    name: nightpigeon
+    name: nightpigeon-bot-api
     runtime: python
     region: oregon
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
+    startCommand: python main_bot_api.py
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: nightpigeon-db
-          property: connectionString
+        sync: false
       - key: DISCORD_TOKEN
         sync: false
       - key: CLIENT_ID
@@ -21,10 +19,16 @@ services:
         sync: false
       - key: REDIRECT_URI
         sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
 
-databases:
-  - name: nightpigeon-db
-    databaseName: nightpigeon
-    user: nightpigeon
+  - type: web
+    name: nightpigeon-dashboard
+    runtime: python
     region: oregon
     plan: free
+    buildCommand: pip install fastapi uvicorn
+    startCommand: python dashboard_server.py
+    envVars:
+      - key: API_URL
+        sync: false

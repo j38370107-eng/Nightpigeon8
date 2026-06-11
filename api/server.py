@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes.auth import router as auth_router
 from api.routes.config import router as config_router
@@ -14,7 +14,7 @@ log = logging.getLogger("api.server")
 DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 
 
-def create_app(bot=None) -> FastAPI:
+def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
     app = FastAPI(title="Nightpigeon API", docs_url=None, redoc_url=None)
 
     allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
@@ -44,11 +44,12 @@ def create_app(bot=None) -> FastAPI:
     async def healthz():
         return {"status": "ok"}
 
-    # Serve dashboard HTML files
-    if DASHBOARD_DIR.exists():
-        # Static assets
-        static_assets = DASHBOARD_DIR
+    if serve_dashboard and DASHBOARD_DIR.exists():
         app.mount("/static", StaticFiles(directory=str(DASHBOARD_DIR)), name="static")
+
+        @app.get("/config.js")
+        async def config_js():
+            return Response(content="window.API_BASE = '';\n", media_type="application/javascript")
 
         @app.get("/")
         async def root():

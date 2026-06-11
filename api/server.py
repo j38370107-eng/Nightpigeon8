@@ -17,14 +17,34 @@ DASHBOARD_DIR = Path(__file__).parent.parent / "dashboard"
 def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
     app = FastAPI(title="Nightpigeon API", docs_url=None, redoc_url=None, redirect_slashes=False)
 
-    allowed_origins = os.environ.get("ALLOWED_ORIGINS", "*").split(",")
-    if "*" in allowed_origins:
-        allowed_origins = ["*"]
+    # Build the allowed-origins list.
+    # Browsers reject Access-Control-Allow-Origin: * when credentials are included,
+    # so we must enumerate real origins when a cross-domain dashboard is configured.
+    raw = os.environ.get("ALLOWED_ORIGINS", "").strip()
+    origins: list[str] = [o.strip() for o in raw.split(",") if o.strip()] if raw else []
+
+    # Always include the dashboard origin so the two-service Render setup works.
+    dashboard_origin = os.environ.get("DASHBOARD_URL", "").rstrip("/").strip()
+    if dashboard_origin and dashboard_origin not in origins:
+        origins.append(dashboard_origin)
+
+    # Also include the Replit dev domain when present.
+    replit_domain = os.environ.get("REPLIT_DEV_DOMAIN", "").strip()
+    if replit_domain:
+        replit_origin = f"https://{replit_domain}"
+        if replit_origin not in origins:
+            origins.append(replit_origin)
+
+    # If no origins were resolved, fall back to permissive wildcard
+    # (same-domain deployments don't need explicit CORS).
+    allow_credentials = bool(origins)
+    if not origins:
+        origins = ["*"]
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=True,
+        allow_origins=origins,
+        allow_credentials=allow_credentials,
         allow_methods=["*"],
         allow_headers=["*"],
     )

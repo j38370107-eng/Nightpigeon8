@@ -73,14 +73,25 @@ def _build_redirect_uri(request: Request) -> str:
     return f"{scheme}://{host}/api/auth/callback"
 
 
+def _behind_https() -> bool:
+    """True when running behind an HTTPS proxy (Render, Replit)."""
+    return bool(os.environ.get("RENDER") or os.environ.get("REPLIT_DOMAINS"))
+
+
 def _set_session_cookie(response, token: str):
-    """Use SameSite=Lax so cookies work across the OAuth top-level redirect."""
+    """
+    Use SameSite=None; Secure when behind HTTPS so the cookie is sent on
+    cross-origin JS fetch calls (two-service Render setup: dashboard on a
+    different subdomain than the API).  Fall back to SameSite=Lax for plain
+    HTTP dev environments.
+    """
+    https = _behind_https()
     response.set_cookie(
         "session",
         token,
         httponly=True,
-        samesite="lax",
-        secure=False,   # works on both HTTP and HTTPS; avoids proxy-layer cookie drops
+        samesite="none" if https else "lax",
+        secure=https,           # SameSite=None is only valid with Secure=True
         max_age=SESSION_EXPIRE_HOURS * 3600,
         path="/",
     )
@@ -233,7 +244,8 @@ async def logout(request: Request):
     cfg = _cfg(request)
     home = cfg["dashboard_url"] or "/"
     resp = RedirectResponse(home, status_code=302)
-    resp.delete_cookie("session", samesite="lax", secure=False, path="/")
+    https = _behind_https()
+    resp.delete_cookie("session", samesite="none" if https else "lax", secure=https, path="/")
     return resp
 
 

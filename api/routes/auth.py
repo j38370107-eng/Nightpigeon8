@@ -207,8 +207,17 @@ async def login(request: Request):
 
     if not cfg["client_id"] or not cfg["client_secret"]:
         # This service doesn't have OAuth credentials.
-        # If API_URL is set, forward to the API service which does have them.
+        # Try to forward to the API service that does.
+
+        # 1) Explicit API_URL env var
         api_url = os.environ.get("API_URL", "").rstrip("/")
+
+        # 2) Derive from REDIRECT_URI: strip /api/auth/callback → base URL
+        if not api_url:
+            redirect_uri = os.environ.get("REDIRECT_URI", "")
+            if redirect_uri and "/api/auth/callback" in redirect_uri:
+                api_url = redirect_uri.split("/api/auth/callback")[0].rstrip("/")
+
         if api_url:
             return RedirectResponse(f"{api_url}/api/auth/login")
         return RedirectResponse("/?auth_error=no_credentials")

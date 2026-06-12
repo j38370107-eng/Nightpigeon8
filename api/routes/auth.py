@@ -150,26 +150,53 @@ def _cfg(request: Request = None):
 @router.get("/api/auth/debug")
 async def debug_config(request: Request):
     cfg = _cfg(request)
-    session_id = request.cookies.get(COOKIE_NAME, "")
-    session_data = await _get_session(session_id) if session_id else None
+
+    # Check cookie
+    cookie_sid = request.cookies.get(COOKIE_NAME, "")
+    cookie_data = await _get_session(cookie_sid) if cookie_sid else None
+
+    # Check Bearer header (used by cross-domain dashboard)
+    bearer_sid = ""
+    bearer_data = None
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        bearer_sid = auth[7:].strip()
+        bearer_data = await _get_session(bearer_sid)
+
+    session_data = bearer_data or cookie_data
+
+    # Check sessions table exists
+    table_ok = False
+    try:
+        from bot.core.database import get_pool
+        pool = await get_pool()
+        async with pool.acquire() as conn:
+            await conn.fetchval("SELECT 1 FROM sessions LIMIT 1")
+        table_ok = True
+    except Exception:
+        table_ok = False
+
     return {
-        "client_id_set":      bool(cfg["client_id"]),
-        "client_secret_set":  bool(cfg["client_secret"]),
-        "redirect_uri":       cfg["redirect_uri"] or "(not set)",
+        "client_id_set":       bool(cfg["client_id"]),
+        "client_secret_set":   bool(cfg["client_secret"]),
+        "redirect_uri":        cfg["redirect_uri"] or "(not set)",
         "redirect_uri_source": (
             "env:REDIRECT_URI" if os.environ.get("REDIRECT_URI") else
             "env:REPLIT_DEV_DOMAIN" if os.environ.get("REPLIT_DEV_DOMAIN") else
             "x-forwarded-host" if request.headers.get("x-forwarded-host") else
             "host-header"
         ),
-        "dashboard_url":      cfg["dashboard_url"] or "(not set)",
-        "host_header":        request.url.netloc,
-        "x_forwarded_host":   request.headers.get("x-forwarded-host", "(not set)"),
-        "x_forwarded_proto":  request.headers.get("x-forwarded-proto", "(not set)"),
-        "behind_https":       _behind_https(),
-        "session_cookie_set": bool(session_id),
-        "session_valid":      bool(session_data),
-        "session_user":       session_data.get("username") if session_data else None,
+        "dashboard_url":       cfg["dashboard_url"] or "(not set)",
+        "api_url_env":         os.environ.get("API_URL", "(not set)"),
+        "host_header":         request.url.netloc,
+        "x_forwarded_host":    request.headers.get("x-forwarded-host", "(not set)"),
+        "x_forwarded_proto":   request.headers.get("x-forwarded-proto", "(not set)"),
+        "behind_https":        _behind_https(),
+        "sessions_table_ok":   table_ok,
+        "session_via_cookie":  bool(cookie_data),
+        "session_via_bearer":  bool(bearer_data),
+        "session_valid":       bool(session_data),
+        "session_user":        session_data.get("username") if session_data else None,
     }
 
 

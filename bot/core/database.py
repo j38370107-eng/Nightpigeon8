@@ -206,8 +206,12 @@ async def _create_tables():
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS oauth_states (
                 state TEXT PRIMARY KEY,
+                return_url TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )
+        """)
+        await conn.execute("""
+            ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS return_url TEXT
         """)
 
         await conn.execute("""

@@ -224,12 +224,22 @@ async def login(request: Request):
 
     state = secrets.token_urlsafe(32)
 
+    # Capture which service/origin the user is coming from so the callback
+    # can redirect them back to the RIGHT place automatically.
+    fwd_host  = request.headers.get("x-forwarded-host", "").strip()
+    fwd_proto = request.headers.get("x-forwarded-proto", "https").strip()
+    if fwd_host:
+        return_origin = f"{fwd_proto}://{fwd_host}"
+    else:
+        return_origin = str(request.base_url).rstrip("/")
+
     from bot.core.database import get_pool
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
             await conn.execute(
-                "INSERT INTO oauth_states (state) VALUES ($1) ON CONFLICT DO NOTHING", state
+                "INSERT INTO oauth_states (state, return_url) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                state, return_origin
             )
     except Exception as e:
         log.warning(f"Could not store OAuth state in DB: {e}")
@@ -254,28 +264,36 @@ async def callback(
 ):
     cfg = _cfg(request)
     dashboard_url = cfg["dashboard_url"]
-    guilds_page   = f"{dashboard_url}/guilds" if dashboard_url else "/guilds"
-    error_page    = f"{dashboard_url}/?auth_error=1" if dashboard_url else "/?auth_error=1"
 
     if error:
         log.warning(f"Discord returned OAuth error: {error}")
-        return RedirectResponse(error_page)
+        return RedirectResponse(f"{dashboard_url}/?auth_error=1" if dashboard_url else "/?auth_error=1")
 
     if not code or not state:
-        return RedirectResponse(error_page)
+        return RedirectResponse(f"{dashboard_url}/?auth_error=1" if dashboard_url else "/?auth_error=1")
 
-    # Validate state (best-effort)
+    # Validate state and retrieve the origin the login came from.
+    # We use that origin for the post-login redirect so single-service and
+    # two-service Render setups both work without any extra env vars.
+    return_origin = dashboard_url  # fallback to DASHBOARD_URL if state not found
     from bot.core.database import get_pool
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT state FROM oauth_states WHERE state=$1", state)
+            row = await conn.fetchrow(
+                "SELECT state, return_url FROM oauth_states WHERE state=$1", state
+            )
             if row:
+                if row["return_url"]:
+                    return_origin = row["return_url"]
                 await conn.execute("DELETE FROM oauth_states WHERE state=$1", state)
             else:
                 log.warning("OAuth state not found — possible replay or DB miss")
     except Exception as e:
         log.warning(f"DB state check skipped: {e}")
+
+    guilds_page = f"{return_origin}/guilds" if return_origin else "/guilds"
+    error_page  = f"{return_origin}/?auth_error=1" if return_origin else "/?auth_error=1"
 
     # Exchange code for tokens
     try:

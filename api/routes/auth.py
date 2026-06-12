@@ -50,7 +50,10 @@ async def _get_session(session_id: str) -> dict | None:
         if row["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
             await _delete_session(session_id)
             return None
-        return json.loads(row["data"])
+        # asyncpg decodes JSONB columns as native Python dicts already — do NOT
+        # call json.loads() again or it raises TypeError and returns None.
+        data = row["data"]
+        return data if isinstance(data, dict) else json.loads(data)
     except Exception as e:
         log.error(f"Session lookup error: {e}")
         return None

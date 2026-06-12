@@ -1,1 +1,2 @@
 - [Auth: server-side sessions](render-oauth-cookie.md) — use DB-backed sessions (sessions table), not JWTs; cookie is a tiny random ID; this is the only approach that works reliably on Render, iOS Safari, and proxies.
+- [asyncpg JSONB decode](asyncpg-jsonb.md) — asyncpg already decodes JSONB columns as Python dicts; never call json.loads() on them again or it silently crashes.

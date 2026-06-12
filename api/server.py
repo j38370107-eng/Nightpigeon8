@@ -85,7 +85,14 @@ def create_app(bot=None, serve_dashboard: bool = True) -> FastAPI:
 
         @app.get("/config.js")
         async def config_js():
-            return Response(content="window.API_BASE = '';\n", media_type="application/javascript")
+            # API_URL env var lets the dashboard service point to a separate API service.
+            # For same-domain (single-service) deployments leave API_URL unset — defaults to ''.
+            api_url = os.environ.get("API_URL", "").rstrip("/")
+            import json as _json
+            return Response(
+                content=f"window.API_BASE = {_json.dumps(api_url)};\n",
+                media_type="application/javascript"
+            )
 
         @app.api_route("/", methods=["GET", "HEAD"])
         async def root():

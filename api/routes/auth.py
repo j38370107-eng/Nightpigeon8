@@ -70,7 +70,19 @@ async def _delete_session(session_id: str):
 
 
 async def get_current_user(request: Request) -> dict | None:
-    """Read the session cookie and return session data, or None if not logged in."""
+    """Return session data for the current request, or None if not logged in.
+
+    Priority:
+    1. Authorization: Bearer <session_id> header  — used by cross-domain (2-service) setups
+       where the dashboard stores the session ID in sessionStorage and sends it as a header.
+    2. np_sid cookie — used by same-domain (1-service) setups.
+    """
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        session_id = auth[7:].strip()
+        user = await _get_session(session_id)
+        if user:
+            return user
     session_id = request.cookies.get(COOKIE_NAME)
     return await _get_session(session_id)
 
@@ -290,24 +302,50 @@ async def callback(
 
     log.info(f"Login success for {user_data['username']} ({user_data['id']})")
 
-    # Use a 200 HTML page + JS redirect instead of 302.
-    # Render's reverse proxy strips Set-Cookie headers from 3xx responses,
-    # so the browser would never receive the session cookie.
-    # A 200 response is never tampered with, so the cookie lands correctly.
-    dest = json.dumps(guilds_page)
-    html = (
-        "<!doctype html><html><body><script>"
-        f"window.location.replace({dest});"
-        "</script></body></html>"
-    )
-    resp = HTMLResponse(content=html, status_code=200)
-    _set_session_cookie(resp, session_id)
+    # For cross-domain (two Render services): embed the session ID in the URL
+    # hash fragment of the dashboard redirect.  Hash fragments are NEVER sent
+    # to any server — not logged, no referrer leakage — and are read by JS on
+    # the target page which stores the ID in sessionStorage and sends it as an
+    # Authorization: Bearer header on every API call.
+    #
+    # For same-domain (one service): just set a cookie.  The hash approach also
+    # works here as a belt-and-suspenders backup.
+    #
+    # We always use a 200 HTML response (never 302) because Render's reverse
+    # proxy strips Set-Cookie headers from 3xx responses.
+    if dashboard_url:
+        # Cross-domain: session ID goes via hash fragment to the dashboard origin
+        cross_dest = f"{guilds_page}#{COOKIE_NAME}={session_id}"
+        dest_js = json.dumps(cross_dest)
+        html = (
+            "<!doctype html><html><body><script>"
+            f"window.location.replace({dest_js});"
+            "</script></body></html>"
+        )
+        resp = HTMLResponse(content=html, status_code=200)
+        # Cookie on the API domain too (harmless, useful if ever same-domain)
+        _set_session_cookie(resp, session_id)
+    else:
+        # Same-domain: cookie is sufficient, hash also set for belt-and-suspenders
+        same_dest = f"{guilds_page}#{COOKIE_NAME}={session_id}"
+        dest_js = json.dumps(same_dest)
+        html = (
+            "<!doctype html><html><body><script>"
+            f"window.location.replace({dest_js});"
+            "</script></body></html>"
+        )
+        resp = HTMLResponse(content=html, status_code=200)
+        _set_session_cookie(resp, session_id)
     return resp
 
 
 # ── Logout ────────────────────────────────────────────────────────
 @router.get("/api/auth/logout")
 async def logout(request: Request):
+    # Delete session from DB — check both Bearer header and cookie
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        await _delete_session(auth[7:].strip())
     session_id = request.cookies.get(COOKIE_NAME)
     if session_id:
         await _delete_session(session_id)

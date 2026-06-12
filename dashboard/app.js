@@ -2,16 +2,52 @@
 
 const API_BASE = (typeof window !== 'undefined' && window.API_BASE) ? window.API_BASE : '';
 
+// ── Session helpers ─────────────────────────────────────────────
+// After OAuth login the API embeds the session ID in the URL hash fragment
+// (e.g. /guilds#np_sid=xxxx).  We pick it up here, store it in sessionStorage,
+// strip the hash from the URL, then send it as "Authorization: Bearer <id>"
+// on every API request.  This works for both:
+//   • two-service (cross-domain) Render setups — where cookies can't cross origins
+//   • single-service (same-domain) setups — cookie still works as a fallback
+const _SID_KEY = 'np_sid';
+
+function _initSession() {
+  try {
+    const hash = window.location.hash;
+    if (hash && hash.includes(_SID_KEY + '=')) {
+      const sid = new URLSearchParams(hash.slice(1)).get(_SID_KEY);
+      if (sid) {
+        sessionStorage.setItem(_SID_KEY, sid);
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+    }
+  } catch(e) {}
+}
+
+function _getSessionId() {
+  try { return sessionStorage.getItem(_SID_KEY); } catch(e) { return null; }
+}
+
+function _clearSession() {
+  try { sessionStorage.removeItem(_SID_KEY); } catch(e) {}
+}
+
+// Run immediately so the session ID is captured before any other code runs
+_initSession();
+
 // ── Fetch helpers ───────────────────────────────────────────────
 async function apiFetch(path, options = {}, redirectOn401 = true) {
+  const sid = _getSessionId();
+  const authHeader = sid ? { 'Authorization': `Bearer ${sid}` } : {};
   const res = await fetch(API_BASE + path, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: { 'Content-Type': 'application/json', ...authHeader, ...(options.headers || {}) },
     ...options,
   });
   if (res.status === 401) {
+    _clearSession();
     if (redirectOn401) {
-      window.location.href = '/api/auth/login';
+      window.location.href = API_BASE + '/api/auth/login';
     }
     throw new Error('Unauthorized');
   }
@@ -80,7 +116,14 @@ function _applyNavState(user) {
   const userInfo  = document.getElementById('user-info');
 
   if (loginBtn)  loginBtn.href  = API_BASE + '/api/auth/login';
-  if (logoutBtn) logoutBtn.href = API_BASE + '/api/auth/logout';
+  if (logoutBtn) {
+    logoutBtn.href = '#';
+    logoutBtn.onclick = (e) => {
+      e.preventDefault();
+      _clearSession();
+      window.location.href = API_BASE + '/api/auth/logout';
+    };
+  }
 
   if (user) {
     if (userInfo)  userInfo.style.display  = 'flex';

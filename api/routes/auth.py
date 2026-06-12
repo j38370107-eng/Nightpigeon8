@@ -206,6 +206,11 @@ async def login(request: Request):
     cfg = _cfg(request)
 
     if not cfg["client_id"] or not cfg["client_secret"]:
+        # This service doesn't have OAuth credentials.
+        # If API_URL is set, forward to the API service which does have them.
+        api_url = os.environ.get("API_URL", "").rstrip("/")
+        if api_url:
+            return RedirectResponse(f"{api_url}/api/auth/login")
         return RedirectResponse("/?auth_error=no_credentials")
 
     state = secrets.token_urlsafe(32)
